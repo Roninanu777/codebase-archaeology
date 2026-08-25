@@ -6,6 +6,7 @@ import sys
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
+from archaeology.classify.backfill import backfill_ast_features
 from archaeology.config import DATABASE_URL
 from archaeology.ingest.git import ingest_repository
 from archaeology.routes.path_a import PathAResult, why_symbol
@@ -30,6 +31,24 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         rows = session.scalar(select(func.count()).select_from(CommitSignificance))
         head = repo_row.head_sha if repo_row else None
     print(f"head={head} significance_rows={rows}")
+    return 0
+
+
+def _cmd_classify(args: argparse.Namespace) -> int:
+    engine = create_engine(args.database_url or DATABASE_URL)
+    stats = backfill_ast_features(
+        engine,
+        args.name,
+        force=args.force,
+        limit=args.limit,
+    )
+    print(
+        f"{args.name}: classified {stats.processed} commits "
+        f"({stats.relabeled} relabeled) in {stats.duration_s:.1f}s"
+    )
+    for label, count in sorted(stats.label_counts.items(), key=lambda kv: -kv[1]):
+        total = max(sum(stats.label_counts.values()), 1)
+        print(f"  {label:<28} {count:>7}  ({count / total:.1%})")
     return 0
 
 
@@ -86,6 +105,15 @@ def main(argv: list[str] | None = None) -> int:
     p_why.add_argument("--repo-path", default=None, help="local clone path override")
     p_why.add_argument("--database-url", default=None, help="override DATABASE URL")
     p_why.set_defaults(func=_cmd_why)
+
+    p_cls = subparsers.add_parser(
+        "classify", help="apply the AST significance layer to an ingested repo"
+    )
+    p_cls.add_argument("--name", required=True, help="repo name as ingested")
+    p_cls.add_argument("--force", action="store_true", help="recompute already-classified commits")
+    p_cls.add_argument("--limit", type=int, default=None, help="cap number of commits")
+    p_cls.add_argument("--database-url", default=None, help="override DATABASE URL")
+    p_cls.set_defaults(func=_cmd_classify)
 
     args = parser.parse_args(argv)
     return int(args.func(args))

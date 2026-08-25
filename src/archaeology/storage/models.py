@@ -89,7 +89,9 @@ class CommitFeature(Base):
     whitespace_only: Mapped[bool | None] = mapped_column()
     comment_only: Mapped[bool | None] = mapped_column()
     pure_rename: Mapped[bool | None] = mapped_column()
+    ast_format_only: Mapped[bool | None] = mapped_column()
     extractor_version: Mapped[str | None] = mapped_column(Text)
+    ast_extractor_version: Mapped[str | None] = mapped_column(Text)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
