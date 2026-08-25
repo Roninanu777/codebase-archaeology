@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -9,7 +10,12 @@ from sqlalchemy import select
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
-from archaeology.retrieval.chunking import ChunkDraft, commit_chunks, render_chunk_text
+from archaeology.retrieval.chunking import (
+    ChunkDraft,
+    commit_chunks,
+    pr_chunks,
+    render_chunk_text,
+)
 from archaeology.retrieval.liveness import head_paths, liveness_score
 from archaeology.storage.models import DiscussionChunk, Repo
 
@@ -68,15 +74,14 @@ def embed_repo(
             raise ValueError(f"repo {repo_name!r} not ingested with a local_path")
         repo_id = int(db_repo.id)
 
-        existing: set[str] = set()
+        existing: set[tuple[str, str]] = set()
         if not force:
             rows = session.execute(
-                select(DiscussionChunk.source_id).where(
-                    DiscussionChunk.repo_id == repo_id,
-                    DiscussionChunk.source_type == "commit_message",
+                select(DiscussionChunk.source_type, DiscussionChunk.source_id).where(
+                    DiscussionChunk.repo_id == repo_id
                 )
             ).all()
-            existing = {sha for (sha,) in rows}
+            existing = {(source_type, source_id) for source_type, source_id in rows}
 
         git_repo: Any = pygit2.Repository(db_repo.local_path)
         alive_paths = head_paths(git_repo, db_repo.head_sha or "")
@@ -105,7 +110,11 @@ def embed_repo(
         buffer_texts: list[str] = []
         buffer_drafts: list[ChunkDraft] = []
 
-        for draft in commit_chunks(session, repo_id, limit=limit, exclude_source_ids=existing):
+        drafts_iter = itertools.chain(
+            commit_chunks(session, repo_id, limit=limit, exclude_source_ids=existing),
+            pr_chunks(session, repo_id, limit=limit, exclude_source_ids=existing),
+        )
+        for draft in drafts_iter:
             buffer_texts.append(render_chunk_text(draft))
             buffer_drafts.append(draft)
             if len(buffer_texts) >= batch_size:

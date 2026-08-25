@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from archaeology.classify.backfill import backfill_ast_features
 from archaeology.config import DATABASE_URL
 from archaeology.ingest.git import ingest_repository
+from archaeology.ingest.tier2 import backfill_pull_requests
 from archaeology.retrieval.embed import Embedder, embed_repo
 from archaeology.retrieval.search import hybrid_search
 from archaeology.routes.path_a import PathAResult, why_symbol
@@ -78,6 +79,20 @@ def _cmd_ask(args: argparse.Namespace) -> int:
         print(f" {rank:>2}. {hit.sha}{date}{stale} liveness={liveness:<4} {ranks}  {hit.title}")
     if result.abstained_reason == "all_stale":
         print("NOTE (all_stale): every retrieved discussion concerns code largely absent at HEAD")
+    return 0
+
+
+def _cmd_backfill_prs(args: argparse.Namespace) -> int:
+    engine = create_engine(args.database_url or DATABASE_URL)
+    stats = backfill_pull_requests(engine, args.name, max_pages=args.max_pages)
+    if stats.complete:
+        print(f"{args.name}: tier-2 backfill complete")
+    else:
+        print(f"{args.name}: tier-2 backfill paused (resume with the same command)")
+    print(
+        f"  pages={stats.pages} fetched={stats.fetched} new={stats.stored_new} "
+        f"rate_left={stats.rate_remaining} in {stats.duration_s:.1f}s"
+    )
     return 0
 
 
@@ -157,6 +172,14 @@ def main(argv: list[str] | None = None) -> int:
     p_ask.add_argument("-n", type=int, default=10)
     p_ask.add_argument("--database-url", default=None)
     p_ask.set_defaults(func=_cmd_ask)
+
+    p_prs = subparsers.add_parser(
+        "backfill-prs", help="tier-2: fetch merged PRs + discussions via GitHub GraphQL"
+    )
+    p_prs.add_argument("--name", required=True, help="repo name as ingested, owner/name")
+    p_prs.add_argument("--max-pages", type=int, default=None)
+    p_prs.add_argument("--database-url", default=None)
+    p_prs.set_defaults(func=_cmd_backfill_prs)
 
     args = parser.parse_args(argv)
     return int(args.func(args))

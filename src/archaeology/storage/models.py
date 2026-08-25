@@ -166,6 +166,35 @@ class Job(Base):
     )
 
 
+class PullRequest(Base):
+    __tablename__ = "pull_requests"
+    __table_args__ = (
+        UniqueConstraint("repo_id", "number", name="uq_pr_repo_number"),
+        Index("ix_pr_repo_merged", "repo_id", "merged_at"),
+    )
+
+    repo_id: Mapped[int] = mapped_column(ForeignKey("repos.id"), primary_key=True)
+    number: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str | None] = mapped_column(Text)
+    body: Mapped[str | None] = mapped_column(Text)
+    author: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    merged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    merge_sha: Mapped[str | None] = mapped_column(Text)
+    comment_count: Mapped[int | None] = mapped_column()
+    discussion: Mapped[str | None] = mapped_column(Text)
+
+
+class CommitPrLink(Base):
+    __tablename__ = "commit_pr_links"
+    __table_args__ = (Index("ix_cpl_pr", "repo_id", "pr_number"),)
+
+    repo_id: Mapped[int] = mapped_column(ForeignKey("repos.id"), primary_key=True)
+    sha: Mapped[str] = mapped_column(Text, primary_key=True)
+    pr_number: Mapped[int] = mapped_column(primary_key=True)
+
+
 class DiscussionChunk(Base):
     __tablename__ = "discussion_chunks"
     __table_args__ = (UniqueConstraint("repo_id", "source_type", "source_id"),)

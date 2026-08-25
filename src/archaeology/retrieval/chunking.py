@@ -7,13 +7,16 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from archaeology.storage.models import Commit, FileChange
+from archaeology.storage.models import Commit, CommitPrLink, FileChange, PullRequest
 
 SOURCE_COMMIT = "commit_message"
+SOURCE_PR_BODY = "pr_body"
+SOURCE_PR_DISCUSSION = "pr_discussion"
 
 MIN_BODY_CHARS = 20
 _MERGE_PREFIXES = ("Merge ", "Revert ")
 _HEADER_PATH_LIMIT = 5
+_MAX_DISCUSSION_CHARS = 16_000
 
 
 @dataclass(slots=True)
@@ -50,19 +53,24 @@ def _is_noise_commit(subject: str, body: str | None) -> bool:
     return len(cleaned) < MIN_BODY_CHARS
 
 
+def _paths_by_sha(session: Session, repo_id: int) -> dict[str, list[str]]:
+    path_rows = session.execute(
+        select(FileChange.sha, FileChange.path).where(FileChange.repo_id == repo_id)
+    ).all()
+    paths: dict[str, list[str]] = {}
+    for sha, path in path_rows:
+        paths.setdefault(sha, []).append(path)
+    return paths
+
+
 def commit_chunks(
     session: Session,
     repo_id: int,
     limit: int | None = None,
-    exclude_source_ids: set[str] | None = None,
+    exclude_source_ids: set[tuple[str, str]] | None = None,
 ) -> Iterator[ChunkDraft]:
     exclude = exclude_source_ids or set()
-    paths_by_sha: dict[str, list[str]] = {}
-    path_rows = session.execute(
-        select(FileChange.sha, FileChange.path).where(FileChange.repo_id == repo_id)
-    ).all()
-    for sha, path in path_rows:
-        paths_by_sha.setdefault(sha, []).append(path)
+    paths_by_sha = _paths_by_sha(session, repo_id)
 
     stmt = (
         select(Commit)
@@ -76,7 +84,7 @@ def commit_chunks(
     produced = 0
     for row in rows:
         sha = row.sha
-        if sha in exclude:
+        if (SOURCE_COMMIT, sha) in exclude:
             continue
         body = (row.body or "").strip()
         subject = (row.subject or "").strip()
@@ -92,6 +100,70 @@ def commit_chunks(
             linked_commits=[sha],
         )
         produced += 1
+        if limit is not None and produced >= limit:
+            return
+
+
+def pr_chunks(
+    session: Session,
+    repo_id: int,
+    limit: int | None = None,
+    exclude_source_ids: set[tuple[str, str]] | None = None,
+) -> Iterator[ChunkDraft]:
+    exclude = exclude_source_ids or set()
+    paths_by_sha = _paths_by_sha(session, repo_id)
+
+    merge_links: dict[int, str] = {}
+    link_rows = session.execute(
+        select(CommitPrLink.pr_number, CommitPrLink.sha).where(CommitPrLink.repo_id == repo_id)
+    ).all()
+    for pr_number, sha in link_rows:
+        merge_links.setdefault(pr_number, sha)
+
+    rows = list(
+        session.scalars(
+            select(PullRequest)
+            .where(PullRequest.repo_id == repo_id)
+            .order_by(PullRequest.merged_at.desc().nullslast())
+        )
+    )
+
+    produced = 0
+    for pr in rows:
+        source_id = f"pr:{pr.number}"
+
+        title = (pr.title or "").strip() or f"PR #{pr.number}"
+        merged_iso = pr.merged_at.isoformat() if pr.merged_at else None
+        merge_sha = merge_links.get(pr.number)
+        linked = [merge_sha] if merge_sha else []
+        touched = sorted(set(paths_by_sha.get(merge_sha or "", [])))
+
+        body_text = (pr.body or "").strip()
+        if body_text and (SOURCE_PR_BODY, source_id) not in exclude:
+            yield ChunkDraft(
+                source_type=SOURCE_PR_BODY,
+                source_id=source_id,
+                authored_at=merged_iso,
+                title=f"PR #{pr.number}: {title}",
+                body=body_text,
+                files_touched=touched,
+                linked_commits=linked,
+            )
+            produced += 1
+
+        discussion = (pr.discussion or "").strip()
+        if discussion and (SOURCE_PR_DISCUSSION, source_id) not in exclude:
+            yield ChunkDraft(
+                source_type=SOURCE_PR_DISCUSSION,
+                source_id=source_id,
+                authored_at=merged_iso,
+                title=f"PR #{pr.number} discussion: {title}",
+                body=discussion,
+                files_touched=touched,
+                linked_commits=linked,
+            )
+            produced += 1
+
         if limit is not None and produced >= limit:
             return
 
