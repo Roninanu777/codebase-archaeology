@@ -3,8 +3,37 @@ from typing import Any
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Index, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
 
 from archaeology.storage.base import Base
+
+
+class Embedding(TypeDecorator[JSON]):
+    """vector(384) on Postgres, JSON elsewhere (tests)."""
+
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Any) -> Any:
+        if dialect.name == "postgresql":
+            from pgvector.sqlalchemy import Vector
+
+            return dialect.type_descriptor(Vector(384))
+        return dialect.type_descriptor(JSON())
+
+
+class TSVector(TypeDecorator[str]):
+    """tsvector on Postgres, Text elsewhere."""
+
+    impl = Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Any) -> Any:
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import TSVECTOR
+
+            return dialect.type_descriptor(TSVECTOR())
+        return self.impl
 
 
 class Trace(Base):
@@ -135,3 +164,24 @@ class Job(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class DiscussionChunk(Base):
+    __tablename__ = "discussion_chunks"
+    __table_args__ = (UniqueConstraint("repo_id", "source_type", "source_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    repo_id: Mapped[int] = mapped_column(ForeignKey("repos.id"))
+    source_type: Mapped[str] = mapped_column(Text)
+    source_id: Mapped[str] = mapped_column(Text)
+    thread_id: Mapped[str | None] = mapped_column(Text)
+    authored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    title: Mapped[str | None] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(Embedding())
+    tsv: Mapped[str | None] = mapped_column(TSVector())
+    files_touched: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    linked_commits: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    liveness_score: Mapped[float | None] = mapped_column()
+    embedding_model: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

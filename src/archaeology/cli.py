@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from archaeology.classify.backfill import backfill_ast_features
 from archaeology.config import DATABASE_URL
 from archaeology.ingest.git import ingest_repository
+from archaeology.retrieval.embed import Embedder, embed_repo
+from archaeology.retrieval.search import hybrid_search
 from archaeology.routes.path_a import PathAResult, why_symbol
 from archaeology.storage.models import CommitSignificance, Repo
 
@@ -49,6 +51,33 @@ def _cmd_classify(args: argparse.Namespace) -> int:
     for label, count in sorted(stats.label_counts.items(), key=lambda kv: -kv[1]):
         total = max(sum(stats.label_counts.values()), 1)
         print(f"  {label:<28} {count:>7}  ({count / total:.1%})")
+    return 0
+
+
+def _cmd_embed(args: argparse.Namespace) -> int:
+    engine = create_engine(args.database_url or DATABASE_URL)
+    stats = embed_repo(engine, args.name, limit=args.limit, force=args.force)
+    print(
+        f"{args.name}: embedded {stats.chunks} chunks "
+        f"({stats.skipped_existing} skipped) in {stats.duration_s:.1f}s [{stats.model}]"
+    )
+    return 0
+
+
+def _cmd_ask(args: argparse.Namespace) -> int:
+    engine = create_engine(args.database_url or DATABASE_URL)
+    result = hybrid_search(engine, Embedder(), args.name, args.query, top_n=args.n)
+    if result.abstained_reason == "no_hits":
+        print("ABSTAINED (no_hits): nothing in the index matches this question")
+        return 0
+    for rank, hit in enumerate(result.hits, start=1):
+        stale = " [STALE]" if hit.stale else ""
+        date = f" {hit.authored_at}" if hit.authored_at else ""
+        liveness = f"{(hit.liveness_score or 0.0):.0%}"
+        ranks = f"d{hit.dense_rank}/s{hit.sparse_rank}"
+        print(f" {rank:>2}. {hit.sha}{date}{stale} liveness={liveness:<4} {ranks}  {hit.title}")
+    if result.abstained_reason == "all_stale":
+        print("NOTE (all_stale): every retrieved discussion concerns code largely absent at HEAD")
     return 0
 
 
@@ -114,6 +143,20 @@ def main(argv: list[str] | None = None) -> int:
     p_cls.add_argument("--limit", type=int, default=None, help="cap number of commits")
     p_cls.add_argument("--database-url", default=None, help="override DATABASE URL")
     p_cls.set_defaults(func=_cmd_classify)
+
+    p_emb = subparsers.add_parser("embed", help="chunk + embed commit messages (Path B)")
+    p_emb.add_argument("--name", required=True)
+    p_emb.add_argument("--limit", type=int, default=None)
+    p_emb.add_argument("--force", action="store_true")
+    p_emb.add_argument("--database-url", default=None)
+    p_emb.set_defaults(func=_cmd_embed)
+
+    p_ask = subparsers.add_parser("ask", help="hybrid retrieval over the chunk corpus")
+    p_ask.add_argument("name")
+    p_ask.add_argument("query", help="natural-language question")
+    p_ask.add_argument("-n", type=int, default=10)
+    p_ask.add_argument("--database-url", default=None)
+    p_ask.set_defaults(func=_cmd_ask)
 
     args = parser.parse_args(argv)
     return int(args.func(args))
