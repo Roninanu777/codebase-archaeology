@@ -37,3 +37,17 @@ commits, and prints a cited timeline. Abstains when evidence is too thin.
 `ask` runs hybrid retrieval (pgvector dense + BM25 ts_rank_cd, fused with RRF)
 over enriched commit-message chunks. Liveness scores flag hits whose files no
 longer exist at HEAD; all-stale results carry an explicit staleness note.
+
+## Surfaces
+
+```sh
+uv run python -m archaeology.api.main --port 8000   # REST API
+uv run python -m archaeology.mcp.server             # MCP server (stdio)
+```
+
+REST: `POST /repos/index`, `GET /repos/{name}/status`,
+`GET /repos/{name}/why/{symbol}?file=`, `GET /repos/{name}/ask?q=&n=`.
+Every answer carries an `index_status` footer so partial indexes are visible.
+
+MCP tools: `why_does_this_exist`, `history_of_symbol`, `search_decisions`.
+Point any MCP client at the stdio server; both surfaces wrap the same core.

@@ -75,6 +75,8 @@ def resolve_symbol(
     path: str,
     symbol: str,
 ) -> SymbolSpan | None:
+    if symbol.encode() not in source:
+        return None
     tree = _parse_best(source, path)
     best: SymbolSpan | None = None
     stack: list[Node] = [tree.root_node]

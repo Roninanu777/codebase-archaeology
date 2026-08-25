@@ -15,6 +15,7 @@ dependencies = [
     "tree-sitter-typescript>=0.23.2",
     "sentence-transformers>=6.0.0",
     "pgvector>=0.5.0",
+    "mcp>=2.1.0",
 ]
 
 [dependency-groups]
@@ -46,6 +47,15 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["mcp.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
+
+[[tool.mypy.overrides]]
+module = ["archaeology.mcp.server"]
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
