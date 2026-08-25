@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from archaeology.ingest.git import ingest_repository
 from archaeology.ingest.github import parse_pr_page, store_pr_page
 from archaeology.ingest.tier2 import backfill_pull_requests
-from archaeology.retrieval.chunking import commit_chunks, pr_chunks
+from archaeology.retrieval.chunking import commit_chunks, pr_chunks, split_discussion
 from archaeology.storage.base import Base
 from tests.conftest import SyntheticRepo
 
@@ -43,6 +43,72 @@ def test_parse_pr_page_extracts_discussion() -> None:
     assert "seb: why this approach" in (first.discussion or "")
     assert first.merge_sha is not None
     assert page.has_next is True
+
+
+def test_split_discussion_packs_and_respects_cap() -> None:
+    comments = [f"author{i}: {'x' * 300}" for i in range(10)]
+    discussion = "\n---\n".join(comments)
+    bins = split_discussion(discussion)
+    assert len(bins) == 2
+    assert all(len(b) <= 1600 + len("\n---\n") for b in bins)
+    rejoined = "\n---\n".join(bins)
+    for comment in comments:
+        assert comment in rejoined
+
+
+def test_split_discussion_hard_splits_oversized_comment() -> None:
+    big = "op: " + ("y" * 4000)
+    bins = split_discussion(big)
+    assert len(bins) >= 3
+    total = sum(len(b) for b in bins)
+    assert total >= 3900
+
+
+def test_split_discussion_single_small_comment_is_one_bin() -> None:
+    assert split_discussion("a: short note") == ["a: short note"]
+
+
+def test_discussion_chunks_get_bin_suffixes(
+    synthetic_js_repo: SyntheticRepo, tmp_path: Path
+) -> None:
+    engine = create_engine("sqlite://")
+    _seed_long_discussion(engine, tmp_path)
+
+    with Session(engine) as session:
+        drafts = [d for d in pr_chunks(session, 1) if d.source_type == "pr_discussion"]
+    ids = [d.source_id for d in drafts]
+    assert ids[0].startswith("pr:7#")
+    assert len(set(ids)) == len(ids)
+
+
+def _seed_long_discussion(engine: Engine, tmp_path: Path) -> None:
+    repo = SyntheticRepo(tmp_path / "longpr")
+    repo.commit(
+        "Merge pull request #7 from dev/x",
+        {"w.js": "export const w = 1;\n"},
+    )
+    Base.metadata.create_all(engine)
+    ingest_repository(engine, tmp_path / "longpr", name="t/long")
+    with Session(engine) as session:
+        from archaeology.storage.models import Repo
+
+        row = session.scalars(select(Repo).where(Repo.name == "t/long")).one()
+        page_json = json.loads(json.dumps(PAGE_JSON["data"]))
+        node = page_json["repository"]["pullRequests"]["nodes"][0]
+        node["comments"] = {
+            "totalCount": 12,
+            "nodes": [
+                {
+                    "author": {"login": f"u{i}"},
+                    "body": f"point {i}: " + ("detail " * 200),
+                    "createdAt": "2020-03-01T11:00:00Z",
+                }
+                for i in range(12)
+            ],
+        }
+        page = parse_pr_page(page_json)
+        store_pr_page(session, int(row.id), page)
+        session.commit()
 
 
 def test_store_and_chunk_prs(synthetic_js_repo: SyntheticRepo, tmp_path: Path) -> None:

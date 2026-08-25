@@ -17,6 +17,8 @@ MIN_BODY_CHARS = 20
 _MERGE_PREFIXES = ("Merge ", "Revert ")
 _HEADER_PATH_LIMIT = 5
 _MAX_DISCUSSION_CHARS = 16_000
+_COMMENT_SEPARATOR = "\n---\n"
+MAX_SUBCHUNK_CHARS = 1_600
 
 
 @dataclass(slots=True)
@@ -104,6 +106,38 @@ def commit_chunks(
             return
 
 
+def split_discussion(discussion: str) -> list[str]:
+    """Pack comment-aligned segments into bins under MAX_SUBCHUNK_CHARS.
+
+    A single oversized segment is hard-split on blank lines. Never drops text.
+    """
+    segments = [s.strip() for s in discussion.split(_COMMENT_SEPARATOR) if s.strip()]
+    if not segments:
+        return []
+
+    bins: list[str] = []
+    current: list[str] = []
+    size = 0
+    for segment in segments:
+        while len(segment) > MAX_SUBCHUNK_CHARS:
+            if current:
+                bins.append(_COMMENT_SEPARATOR.join(current))
+                current, size = [], 0
+            cut = segment.rfind("\n\n", 0, MAX_SUBCHUNK_CHARS)
+            if cut <= 0:
+                cut = MAX_SUBCHUNK_CHARS
+            bins.append(segment[:cut].strip())
+            segment = segment[cut:].strip()
+        if size + len(segment) > MAX_SUBCHUNK_CHARS and current:
+            bins.append(_COMMENT_SEPARATOR.join(current))
+            current, size = [], 0
+        current.append(segment)
+        size += len(segment) + len(_COMMENT_SEPARATOR)
+    if current:
+        bins.append(_COMMENT_SEPARATOR.join(current))
+    return bins
+
+
 def pr_chunks(
     session: Session,
     repo_id: int,
@@ -152,17 +186,22 @@ def pr_chunks(
             produced += 1
 
         discussion = (pr.discussion or "").strip()
-        if discussion and (SOURCE_PR_DISCUSSION, source_id) not in exclude:
-            yield ChunkDraft(
-                source_type=SOURCE_PR_DISCUSSION,
-                source_id=source_id,
-                authored_at=merged_iso,
-                title=f"PR #{pr.number} discussion: {title}",
-                body=discussion,
-                files_touched=touched,
-                linked_commits=linked,
-            )
-            produced += 1
+        if discussion:
+            bins = split_discussion(discussion)
+            for index, bin_text in enumerate(bins, start=1):
+                if (SOURCE_PR_DISCUSSION, f"{source_id}#{index}") in exclude:
+                    continue
+                suffix = f"#{index}" if len(bins) > 1 else "#1"
+                yield ChunkDraft(
+                    source_type=SOURCE_PR_DISCUSSION,
+                    source_id=f"{source_id}{suffix}",
+                    authored_at=merged_iso,
+                    title=f"PR #{pr.number} discussion: {title}",
+                    body=bin_text,
+                    files_touched=touched,
+                    linked_commits=linked,
+                )
+                produced += 1
 
         if limit is not None and produced >= limit:
             return
