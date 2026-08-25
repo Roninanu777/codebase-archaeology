@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
@@ -43,10 +44,10 @@ def render_chunk_text(draft: ChunkDraft) -> str:
 def _is_noise_commit(subject: str, body: str | None) -> bool:
     if subject.startswith(_MERGE_PREFIXES):
         return True
+    if re.search(r"#\d+\)", subject):
+        return False
     cleaned = (body or "").strip()
-    if len(cleaned) < MIN_BODY_CHARS and not subject.startswith(("Fix ", "Fixes ")):
-        return True
-    return False
+    return len(cleaned) < MIN_BODY_CHARS
 
 
 def commit_chunks(

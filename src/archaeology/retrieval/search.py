@@ -15,6 +15,13 @@ RRF_K = 60
 STALE_THRESHOLD = 0.34
 
 
+def _or_query(query: str) -> str:
+    import re
+
+    tokens = re.findall(r"[A-Za-z0-9_]{2,}", query)
+    return " or ".join(tokens) if tokens else query
+
+
 @dataclass(slots=True)
 class SearchHit:
     chunk_id: int
@@ -86,7 +93,9 @@ def hybrid_search(
 
     with engine.connect() as conn:
         dense_rows = conn.execute(dense_sql, {"r": repo_id, "v": vec_literal, "k": k_dense}).all()
-        sparse_rows = conn.execute(sparse_sql, {"r": repo_id, "q": query, "k": k_sparse}).all()
+        sparse_rows = conn.execute(
+            sparse_sql, {"r": repo_id, "q": _or_query(query), "k": k_sparse}
+        ).all()
 
     dense_ids = [int(r[0]) for r in dense_rows]
     sparse_ids = [int(r[0]) for r in sparse_rows]
