@@ -33,6 +33,7 @@ class Repo(Base):
     default_branch: Mapped[str | None] = mapped_column(Text)
     head_sha: Mapped[str | None] = mapped_column(Text)
     indexed_through_sha: Mapped[str | None] = mapped_column(Text)
+    local_path: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -61,3 +61,21 @@ def synthetic_repo(tmp_path: Path) -> Generator[SyntheticRepo, None, None]:
     built.commit("change logic", {"app.py": CHANGED_APP})
     built.commit("rename app to calc", {"app.py": None, "calc.py": RENAMED_APP})
     yield built
+
+
+_JS_V1 = "export function calc(a, b) {\n  return a + b;\n}\n"
+_JS_WS = "export function calc(a, b) {\n\treturn a + b;\n}\n"
+_JS_COMMENT = "export function calc(a, b) {\n\t// clamp inputs later\n\treturn a + b;\n}\n"
+_JS_V2 = (
+    "export function calc(a, b) {\n\t// clamp inputs later\n\treturn Math.min(a + b, 100);\n}\n"
+)
+
+
+@pytest.fixture()
+def synthetic_js_repo(tmp_path: Path) -> Generator[SyntheticRepo, None, None]:
+    built = SyntheticRepo(tmp_path / "jsrepo")
+    built.commit("add calc", {"src/calc.js": _JS_V1})
+    built.commit("reindent", {"src/calc.js": _JS_WS})
+    built.commit("note", {"src/calc.js": _JS_COMMENT})
+    built.commit("clamp result", {"src/calc.js": _JS_V2})
+    yield built

@@ -61,7 +61,8 @@ def ingest_repository(
 ) -> IngestStats:
     repo = open_repository(repo_path)
     head = str(repo.head.target)
-    resolved_name = name or Path(str(repo.path)).resolve().parent.name
+    resolved_path = Path(repo_path).expanduser().resolve()
+    resolved_name = name or resolved_path.name
 
     stats = IngestStats()
     started = time.monotonic()
@@ -69,17 +70,21 @@ def ingest_repository(
     with Session(engine) as session:
         db_repo = session.scalars(select(Repo).where(Repo.name == resolved_name)).first()
         if db_repo is not None and db_repo.head_sha == head == db_repo.indexed_through_sha:
+            if resolved_path and db_repo.local_path != str(resolved_path):
+                db_repo.local_path = str(resolved_path)
+                session.commit()
             stats.skipped = True
             stats.duration_s = time.monotonic() - started
             return stats
 
         if db_repo is None:
-            db_repo = Repo(name=resolved_name, url=url)
+            db_repo = Repo(name=resolved_name, url=url, local_path=str(resolved_path))
             session.add(db_repo)
             session.flush()
         else:
             if url:
                 db_repo.url = url
+            db_repo.local_path = str(resolved_path)
         db_repo.default_branch = repo.head.shorthand
         db_repo.head_sha = head
         repo_id = int(db_repo.id)
@@ -108,30 +113,25 @@ def ingest_repository(
                 fresh_shas = {row["sha"] for row in commit_rows if row["sha"] not in existing}
                 if fresh_shas:
                     fresh_commits = [r for r in commit_rows if r["sha"] in fresh_shas]
+                    fresh_parents = [r for r in parent_rows if r["child_sha"] in fresh_shas]
+                    fresh_changes = [r for r in change_rows if r["sha"] in fresh_shas]
+                    fresh_features = [r for r in feature_rows if r["sha"] in fresh_shas]
+                    fresh_sig = [r for r in significance_rows if r["sha"] in fresh_shas]
                     session.execute(insert(Commit), fresh_commits)
-                    session.execute(
-                        insert(CommitParent),
-                        [r for r in parent_rows if r["child_sha"] in fresh_shas],
-                    )
-                    session.execute(
-                        insert(FileChange),
-                        [r for r in change_rows if r["sha"] in fresh_shas],
-                    )
-                    session.execute(
-                        insert(CommitFeature),
-                        [r for r in feature_rows if r["sha"] in fresh_shas],
-                    )
-                    session.execute(
-                        insert(CommitSignificance),
-                        [r for r in significance_rows if r["sha"] in fresh_shas],
-                    )
+                    if fresh_parents:
+                        session.execute(insert(CommitParent), fresh_parents)
+                    if fresh_changes:
+                        session.execute(insert(FileChange), fresh_changes)
+                    if fresh_features:
+                        session.execute(insert(CommitFeature), fresh_features)
+                    if fresh_sig:
+                        session.execute(insert(CommitSignificance), fresh_sig)
                     stats.commits += len(fresh_commits)
-                    for row in significance_rows:
-                        if row["sha"] in fresh_shas:
-                            stats.label_counts[row["label"]] = (
-                                stats.label_counts.get(row["label"], 0) + 1
-                            )
-                    stats.file_changes += len(change_rows)
+                    stats.file_changes += len(fresh_changes)
+                    for row in fresh_sig:
+                        stats.label_counts[row["label"]] = (
+                            stats.label_counts.get(row["label"], 0) + 1
+                        )
                 session.commit()
             commit_rows.clear()
             parent_rows.clear()
