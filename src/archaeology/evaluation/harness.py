@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 
 from archaeology.config import DATABASE_URL
 from archaeology.retrieval.embed import Embedder
+from archaeology.retrieval.rerank import Reranker
 from archaeology.retrieval.search import hybrid_search
 from archaeology.routes.path_a import why_symbol
 
@@ -62,7 +63,9 @@ class Report:
         return "\n".join(lines)
 
 
-def _run_case(case: dict[str, Any], engine: Any, embedder: Embedder) -> CaseResult:
+def _run_case(
+    case: dict[str, Any], engine: Any, embedder: Embedder, reranker: Reranker
+) -> CaseResult:
     started = time.monotonic()
     kind = case["kind"]
     path = case["path"]
@@ -89,6 +92,7 @@ def _run_case(case: dict[str, Any], engine: Any, embedder: Embedder) -> CaseResu
             case["repo"],
             case["query"],
             top_n=case["top_k"],
+            reranker=reranker,
         )
         hit_shas = [hit.sha for hit in search_result.hits]
         matched = next(
@@ -117,6 +121,7 @@ def _run_case(case: dict[str, Any], engine: Any, embedder: Embedder) -> CaseResu
             case["repo"],
             case["query"],
             top_n=case["top_k"],
+            reranker=reranker,
         )
         hit_shas = [hit.sha for hit in search_result.hits]
         surfaced = any(
@@ -143,9 +148,11 @@ def run_eval(
     cases_path: str | Path,
     database_url: str | None = None,
     embedder: Embedder | None = None,
+    reranker: Reranker | None = None,
 ) -> Report:
     engine = create_engine(database_url or DATABASE_URL)
     embedder = embedder or Embedder()
+    reranker = reranker or Reranker()
     report = Report()
     with open(cases_path, encoding="utf-8") as fh:
         for line in fh:
@@ -153,7 +160,7 @@ def run_eval(
             if not line or line.startswith("#"):
                 continue
             case = json.loads(line)
-            report.add(_run_case(case, engine, embedder))
+            report.add(_run_case(case, engine, embedder, reranker))
     return report
 
 

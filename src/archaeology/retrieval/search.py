@@ -9,6 +9,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
 from archaeology.retrieval.embed import QUERY_PREFIX
+from archaeology.retrieval.rerank import rerank_order
 from archaeology.storage.models import DiscussionChunk, Repo
 
 RRF_K = 60
@@ -32,6 +33,7 @@ class SearchHit:
     dense_rank: int | None
     sparse_rank: int | None
     liveness_score: float | None
+    rerank_score: float | None = None
 
     @property
     def stale(self) -> bool:
@@ -69,6 +71,7 @@ def hybrid_search(
     k_dense: int = 50,
     k_sparse: int = 50,
     top_n: int = 20,
+    reranker: Any | None = None,
 ) -> SearchResult:
     if engine.dialect.name != "postgresql":
         raise RuntimeError("hybrid_search requires PostgreSQL (pgvector + tsvector)")
@@ -101,19 +104,34 @@ def hybrid_search(
     sparse_ids = [int(r[0]) for r in sparse_rows]
 
     fused = rrf_fuse([dense_ids, sparse_ids])
-    ordered = sorted(fused.items(), key=lambda kv: -kv[1])[:top_n]
+    candidates = sorted(fused.items(), key=lambda kv: -kv[1])[: max(50, top_n)]
 
     result = SearchResult(query=query)
 
-    if not ordered:
+    if not candidates:
         result.abstained_reason = "no_hits"
         return result
 
     with Session(engine) as session:
         chunks = session.scalars(
-            select(DiscussionChunk).where(DiscussionChunk.id.in_([i for i, _ in ordered]))
+            select(DiscussionChunk).where(DiscussionChunk.id.in_([i for i, _ in candidates]))
         ).all()
         by_id = {c.id: c for c in chunks}
+
+    rerank_scores: dict[int, float] = {}
+    if reranker is not None:
+        texts = {cid: by_id[cid].body for cid, _ in candidates if cid in by_id}
+        try:
+            rerank_scores = dict(rerank_order(query, texts, reranker))
+        except Exception:
+            rerank_scores = {}
+
+    def _sort_key(pair: tuple[int, float]) -> tuple[float, float]:
+        chunk_id, rrf_score = pair
+        rs = rerank_scores.get(chunk_id)
+        return (-rs if rs is not None else float("-inf")), -rrf_score
+
+    ordered = sorted(candidates, key=_sort_key)[:top_n]
 
     for chunk_id, score in ordered:
         chunk = by_id.get(chunk_id)
@@ -129,6 +147,7 @@ def hybrid_search(
                 dense_rank=dense_ids.index(chunk.id) + 1 if chunk.id in dense_ids else None,
                 sparse_rank=sparse_ids.index(chunk.id) + 1 if chunk.id in sparse_ids else None,
                 liveness_score=chunk.liveness_score,
+                rerank_score=rerank_scores.get(chunk.id),
             )
         )
 
