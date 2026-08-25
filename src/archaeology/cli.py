@@ -13,6 +13,7 @@ from archaeology.ingest.tier2 import backfill_pull_requests
 from archaeology.retrieval.embed import Embedder, embed_repo
 from archaeology.retrieval.search import hybrid_search
 from archaeology.routes.path_a import PathAResult, why_symbol
+from archaeology.routes.synthesis import synthesize_why
 from archaeology.storage.models import CommitSignificance, Repo
 
 
@@ -93,6 +94,17 @@ def _cmd_backfill_prs(args: argparse.Namespace) -> int:
         f"  pages={stats.pages} fetched={stats.fetched} new={stats.stored_new} "
         f"rate_left={stats.rate_remaining} in {stats.duration_s:.1f}s"
     )
+    return 0
+
+
+def _cmd_answer(args: argparse.Namespace) -> int:
+    engine = create_engine(args.database_url or DATABASE_URL)
+    result = synthesize_why(engine, args.name, args.symbol, file=args.file)
+    if result.status != "answered":
+        print(f"ABSTAINED ({result.abstained_reason})")
+        return 0
+    print(result.answer)
+    print(f"\n-- model={result.model} cited={','.join(result.citations) or 'NONE'}")
     return 0
 
 
@@ -180,6 +192,15 @@ def main(argv: list[str] | None = None) -> int:
     p_prs.add_argument("--max-pages", type=int, default=None)
     p_prs.add_argument("--database-url", default=None)
     p_prs.set_defaults(func=_cmd_backfill_prs)
+
+    p_ans = subparsers.add_parser(
+        "answer", help="Path A + LLM synthesis via OpenRouter (needs OPENROUTER_API_KEY)"
+    )
+    p_ans.add_argument("name")
+    p_ans.add_argument("symbol")
+    p_ans.add_argument("--file", default=None)
+    p_ans.add_argument("--database-url", default=None)
+    p_ans.set_defaults(func=_cmd_answer)
 
     args = parser.parse_args(argv)
     return int(args.func(args))

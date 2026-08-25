@@ -16,6 +16,7 @@ from archaeology.ingest.git import ingest_repository
 from archaeology.retrieval.embed import Embedder
 from archaeology.retrieval.search import hybrid_search
 from archaeology.routes.path_a import why_symbol
+from archaeology.routes.synthesis import synthesize_why
 from archaeology.storage.status import repo_status
 
 
@@ -88,6 +89,14 @@ def create_app(database_url: str | None = None) -> FastAPI:
         payload = _payload(result)
         payload["index_status"] = status
         return payload
+
+    @app.get("/repos/{name:path}/answer/{symbol}")
+    def get_answer(name: str, symbol: str, file: str | None = None) -> dict[str, Any]:
+        try:
+            result = synthesize_why(engine, name, symbol, file=file)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _payload(result)
 
     @app.get("/repos/{name:path}/ask")
     def post_ask(name: str, q: str, n: int = 10) -> dict[str, Any]:
