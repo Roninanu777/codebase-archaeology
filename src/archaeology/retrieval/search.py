@@ -34,6 +34,7 @@ class SearchHit:
     sparse_rank: int | None
     liveness_score: float | None
     rerank_score: float | None = None
+    repo: str | None = None
 
     @property
     def stale(self) -> bool:
@@ -128,6 +129,19 @@ def hybrid_search(
             select(DiscussionChunk).where(DiscussionChunk.id.in_([i for i, _ in candidates]))
         ).all()
         by_id = {c.id: c for c in chunks}
+        from archaeology.storage.models import Repo as RepoModel
+
+        involved = {c.repo_id for c in chunks}
+        repo_names = (
+            {
+                rid: name
+                for rid, name in session.execute(
+                    select(RepoModel.id, RepoModel.name).where(RepoModel.id.in_(involved))
+                ).all()
+            }
+            if involved
+            else {}
+        )
 
     rerank_scores: dict[int, float] = {}
     if reranker is not None:
@@ -158,6 +172,7 @@ def hybrid_search(
                 dense_rank=dense_ids.index(chunk.id) + 1 if chunk.id in dense_ids else None,
                 sparse_rank=sparse_ids.index(chunk.id) + 1 if chunk.id in sparse_ids else None,
                 liveness_score=chunk.liveness_score,
+                repo=repo_names.get(chunk.repo_id),
                 rerank_score=rerank_scores.get(chunk.id),
             )
         )

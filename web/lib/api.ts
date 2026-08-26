@@ -49,6 +49,7 @@ export interface SearchHit {
   liveness_score: number | null;
   rerank_score?: number | null;
   stale: boolean;
+  repo?: string | null;
 }
 
 export interface AskResult {
