@@ -6,6 +6,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -41,6 +42,15 @@ def _payload(obj: Any) -> dict[str, Any]:
 
 def create_app(database_url: str | None = None) -> FastAPI:
     app = FastAPI(title="Codebase Archaeology", version="0.2.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     engine = _engine(database_url)
 
     @app.get("/healthz")
