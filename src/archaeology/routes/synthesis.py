@@ -16,8 +16,8 @@ MAX_BUNDLE_CHARS = 9_000
 MAX_DISCUSSION_SNIPPETS = 3
 SNIPPET_CHARS = 700
 
-MAX_QUESTION_HITS = 8
-MAX_HIT_BODY_CHARS = 500
+MAX_QUESTION_HITS = 10
+MAX_HIT_BODY_CHARS = 350
 
 _SYMBOL_RE = re.compile(r"^[\w$]+(\.\w+)?$")
 
@@ -206,13 +206,13 @@ def synthesize_why(
     )
 
 
-def render_hits_bundle(question: str, hits: list[Any], bodies: dict[str, str]) -> str:
+def render_hits_bundle(question: str, hits: list[Any], bodies: dict[int, str]) -> str:
     lines = [f"Question: {question}", "", "Evidence (ranked by relevance):"]
     for hit in hits:
         source_id = hit.sha
         date = f" {hit.authored_at}" if hit.authored_at else ""
         lines.append(f"[{source_id}]{date} {hit.title}")
-        body = bodies.get(source_id, "").strip()
+        body = bodies.get(hit.chunk_id, "").strip()
         if body:
             trimmed = body[:MAX_HIT_BODY_CHARS]
             if len(body) > MAX_HIT_BODY_CHARS:
@@ -224,7 +224,7 @@ def render_hits_bundle(question: str, hits: list[Any], bodies: dict[str, str]) -
 
 def synthesize_question(
     engine: Any,
-    repo_name: str,
+    repo_name: str | list[str],
     question: str,
     n: int = MAX_QUESTION_HITS,
     model: str | None = None,
@@ -232,16 +232,56 @@ def synthesize_question(
     embedder: Any = None,
     reranker: Any = None,
 ) -> tuple[SynthesisResult, Any]:
-    from archaeology.retrieval.search import hybrid_search
+    from archaeology.retrieval.search import SearchResult, hybrid_search
 
-    search_result = hybrid_search(engine, embedder, repo_name, question, top_n=n, reranker=reranker)
+    names = [repo_name] if isinstance(repo_name, str) else list(repo_name)
+    repo_label = ", ".join(names)
+
+    if len(names) == 1:
+        search_result = hybrid_search(
+            engine, embedder, names[0], question, top_n=n, reranker=reranker
+        )
+    else:
+        per_repo = [
+            hybrid_search(engine, embedder, name, question, top_n=n, reranker=None)
+            for name in names
+        ]
+        merged: dict[int, Any] = {}
+        order = 0
+        for sr in per_repo:
+            for hit in sr.hits:
+                if hit.chunk_id in merged:
+                    continue
+                hit.score = order * 1e-6
+                merged[hit.chunk_id] = hit
+                order += 1
+        hits = list(merged.values())
+        if reranker is not None and hits:
+            with Session(engine) as session:
+                from archaeology.storage.models import DiscussionChunk
+
+                rows = (
+                    session.query(DiscussionChunk)
+                    .filter(DiscussionChunk.id.in_([h.chunk_id for h in hits]))
+                    .all()
+                )
+                body_by_id = {row.id: (row.body or "") for row in rows}
+            scores = reranker.scores(question, [body_by_id.get(h.chunk_id, "") for h in hits])
+            hits = [h for _, h in sorted(zip(scores, hits, strict=True), key=lambda p: -p[0])][:n]
+        else:
+            hits = hits[:n]
+        search_result = SearchResult(
+            query=question,
+            hits=hits,
+            abstained_reason="no_hits" if not hits else None,
+        )
 
     def abstain(reason: str) -> tuple[SynthesisResult, Any]:
         return (
             SynthesisResult(
                 status="abstained",
                 symbol=question,
-                repo=repo_name,
+                repo=repo_label,
                 abstained_reason=reason,
             ),
             search_result,
@@ -260,7 +300,7 @@ def synthesize_question(
                 DiscussionChunk.id.in_([h.chunk_id for h in search_result.hits])
             )
         ).all()
-    bodies = {str(c.source_id)[:9]: (c.body or "") for c in chunk_rows}
+    bodies = {c.id: (c.body or "") for c in chunk_rows}
 
     chosen_model = model or synthesis_model()
     bundle = render_hits_bundle(question, search_result.hits, bodies)
@@ -288,7 +328,7 @@ def synthesize_question(
             SynthesisResult(
                 status="abstained",
                 symbol=question,
-                repo=repo_name,
+                repo=repo_label,
                 abstained_reason=completion.content,
                 model=completion.model,
             ),
@@ -300,7 +340,7 @@ def synthesize_question(
             SynthesisResult(
                 status="abstained",
                 symbol=question,
-                repo=repo_name,
+                repo=repo_label,
                 abstained_reason="empty_generation: model returned no content",
                 model=completion.model,
             ),
@@ -313,7 +353,7 @@ def synthesize_question(
         SynthesisResult(
             status="answered",
             symbol=question,
-            repo=repo_name,
+            repo=repo_label,
             answer=completion.content,
             citations=citations,
             model=completion.model,
@@ -331,14 +371,29 @@ def answer_any(
     poster: Any = None,
     embedder: Any = None,
     reranker: Any = None,
+    search_all_repos: bool = True,
 ) -> dict[str, Any]:
-    """Router: symbol-looking queries go to Path A, prose to Path B."""
+    """Router: symbol-looking queries go to Path A, prose to Path B.
+
+    Path B searches every indexed repo by default so rationale living in a
+    sibling corpus (e.g. reactjs/rfcs) is reachable from one question.
+    """
     if looks_like_symbol(query):
         result = synthesize_why(engine, repo_name, query, file=file, model=model, poster=poster)
         return {"path": "A", "synthesis": result, "evidence": None}
+    repos: str | list[str] = repo_name
+    if search_all_repos:
+        from sqlalchemy import select
+
+        from archaeology.storage.models import Repo
+
+        with Session(engine) as session:
+            repos = list(session.scalars(select(Repo.name).order_by(Repo.name)).all()) or [
+                repo_name
+            ]
     result, search_result = synthesize_question(
         engine,
-        repo_name,
+        repos,
         query,
         model=model,
         poster=poster,

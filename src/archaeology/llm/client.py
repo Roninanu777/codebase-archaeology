@@ -31,7 +31,12 @@ Poster = Callable[[str, dict[str, Any], dict[str, str]], dict[str, Any]]
 
 
 def _default_poster(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
-    response = httpx.post(url, json=payload, headers=headers, timeout=120.0)
+    for attempt in range(2):
+        response = httpx.post(url, json=payload, headers=headers, timeout=60.0)
+        if response.status_code == 429 and attempt == 0:
+            time.sleep(4.0)
+            continue
+        break
     if response.status_code >= 400:
         detail = response.text[:200]
         raise RuntimeError(f"OpenRouter error {response.status_code}: {detail}")

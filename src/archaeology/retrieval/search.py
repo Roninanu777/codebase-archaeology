@@ -56,17 +56,20 @@ def rrf_fuse(rank_lists: list[list[int]], k: int = RRF_K) -> dict[int, float]:
     return scores
 
 
-def _repo_id(session: Session, repo_name: str) -> int:
-    row = session.scalars(select(Repo).where(Repo.name == repo_name)).first()
-    if row is None:
-        raise ValueError(f"unknown repo {repo_name!r}")
-    return int(row.id)
+def _repo_ids(session: Session, repo_names: list[str]) -> list[int]:
+    ids: list[int] = []
+    for name in repo_names:
+        row = session.scalars(select(Repo).where(Repo.name == name)).first()
+        if row is None:
+            raise ValueError(f"unknown repo {name!r}")
+        ids.append(int(row.id))
+    return ids
 
 
 def hybrid_search(
     engine: Any,
     embedder: Any,
-    repo_name: str,
+    repo_name: str | list[str],
     query: str,
     k_dense: int = 50,
     k_sparse: int = 50,
@@ -76,28 +79,36 @@ def hybrid_search(
     if engine.dialect.name != "postgresql":
         raise RuntimeError("hybrid_search requires PostgreSQL (pgvector + tsvector)")
 
+    names = [repo_name] if isinstance(repo_name, str) else list(repo_name)
     started = time.monotonic()
     with Session(engine) as session:
-        repo_id = _repo_id(session, repo_name)
+        repo_ids = _repo_ids(session, names)
 
     qvec = embedder.encode([QUERY_PREFIX + query])[0]
     vec_literal = "[" + ",".join(f"{x:.6f}" for x in qvec) + "]"
 
     dense_sql = sql_text(
         "SELECT id FROM discussion_chunks "
-        "WHERE repo_id = :r AND embedding IS NOT NULL "
+        "WHERE repo_id IN :repos AND embedding IS NOT NULL "
         "ORDER BY embedding <=> CAST(:v AS vector) LIMIT :k"
     )
     sparse_sql = sql_text(
-        "SELECT id FROM discussion_chunks, websearch_to_tsquery('english', :q) q "
-        "WHERE repo_id = :r AND tsv @@ q "
-        "ORDER BY ts_rank_cd(tsv, q) DESC LIMIT :k"
+        "SELECT id FROM discussion_chunks d, websearch_to_tsquery('english', :q) q "
+        "WHERE d.repo_id IN :repos AND d.tsv @@ q "
+        "ORDER BY ts_rank_cd(d.tsv, q) DESC LIMIT :k"
     )
 
+    from sqlalchemy import bindparam
+
+    dense_sql = dense_sql.bindparams(bindparam("repos", expanding=True))
+    sparse_sql = sparse_sql.bindparams(bindparam("repos", expanding=True))
+
     with engine.connect() as conn:
-        dense_rows = conn.execute(dense_sql, {"r": repo_id, "v": vec_literal, "k": k_dense}).all()
+        dense_rows = conn.execute(
+            dense_sql, {"repos": repo_ids, "v": vec_literal, "k": k_dense}
+        ).all()
         sparse_rows = conn.execute(
-            sparse_sql, {"r": repo_id, "q": _or_query(query), "k": k_sparse}
+            sparse_sql, {"repos": repo_ids, "q": _or_query(query), "k": k_sparse}
         ).all()
 
     dense_ids = [int(r[0]) for r in dense_rows]
