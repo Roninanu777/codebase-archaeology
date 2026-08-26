@@ -40,7 +40,13 @@ class Report:
 
     def to_markdown(self, title: str) -> str:
         lines = [f"# {title}", ""]
-        groups = [("A", "attribution"), ("A", "abstention"), ("B", "retrieval"), ("B", "known_gap")]
+        groups = [
+            ("A", "attribution"),
+            ("A", "abstention"),
+            ("B", "retrieval"),
+            ("B", "known_gap"),
+            ("S", "synthesis"),
+        ]
         for path, kind in groups:
             metric = self.metric(path, kind)
             if metric is None:
@@ -131,6 +137,37 @@ def _run_case(
         note = case.get("note", "")
         state = "expected commit surfaced anyway" if surfaced else "truth absent from corpus"
         detail = f"gap confirmed ({state}); {note}"
+    elif kind == "synthesis":
+        from archaeology.routes.synthesis import synthesize_why
+
+        synth = synthesize_why(
+            engine,
+            case["repo"],
+            case["symbol"],
+            file=case.get("file"),
+            model=case.get("model"),
+        )
+        expect = case.get("expect", "answer")
+        if expect == "abstain":
+            passed = synth.status == "abstained"
+            detail = f"status={synth.status} reason={(synth.abstained_reason or '')[:80]}"
+        else:
+            if synth.status != "answered":
+                passed = False
+                detail = (
+                    f"expected answer, got {synth.status}: {(synth.abstained_reason or '')[:80]}"
+                )
+            else:
+                expected_citations = case.get("expected_citations", [])
+                missing = [
+                    exp
+                    for exp in expected_citations
+                    if not any(c.startswith(exp[:9]) for c in synth.citations)
+                ]
+                passed = not missing
+                detail = f"cited {','.join(synth.citations)[:90]}" + (
+                    f" | MISSING {missing}" if missing else ""
+                )
     else:
         raise ValueError(f"unknown kind {kind!r}")
 
