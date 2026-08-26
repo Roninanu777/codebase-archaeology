@@ -9,9 +9,11 @@ from archaeology.llm.client import chat_completion, synthesis_model
 from archaeology.llm.tracing import trace_call
 from archaeology.routes.path_a import PathAResult, why_symbol
 
-MAX_EVIDENCE_COMMITS = 20
+MAX_EVIDENCE_COMMITS = 14
 MAX_BODY_CHARS = 400
-MAX_BUNDLE_CHARS = 7_000
+MAX_BUNDLE_CHARS = 9_000
+MAX_DISCUSSION_SNIPPETS = 3
+SNIPPET_CHARS = 700
 
 SYSTEM_PROMPT = """You answer "why does this code exist" questions using ONLY the supplied evidence.
 
@@ -48,7 +50,7 @@ def render_evidence(result: PathAResult) -> str:
         date = f" {ev.committed_at}" if ev.committed_at else ""
         lines.append(f"[{ev.sha}]{date} {ev.author or 'unknown'}{prs}: {ev.subject}")
         body = (ev.body or "").strip()
-        if body and len(result.timeline) <= MAX_EVIDENCE_COMMITS:
+        if body:
             trimmed = body[:MAX_BODY_CHARS]
             if len(body) > MAX_BODY_CHARS:
                 trimmed += "..."
@@ -58,6 +60,68 @@ def render_evidence(result: PathAResult) -> str:
         lines.append("")
     bundle = "\n".join(lines)
     return bundle[:MAX_BUNDLE_CHARS]
+
+
+def _pr_discussion_snippets(
+    session: Any, repo_name: str, timeline: list[Any]
+) -> list[tuple[str, str]]:
+    from sqlalchemy import select
+
+    from archaeology.storage.models import CommitPrLink, DiscussionChunk, Repo
+
+    sha_prefixes = [ev.sha for ev in timeline if not ev.sha.startswith("pr:")]
+    if not sha_prefixes:
+        return []
+
+    repo_row = session.scalars(select(Repo).where(Repo.name == repo_name)).first()
+    if repo_row is None:
+        return []
+    conditions = [
+        (CommitPrLink.repo_id == int(repo_row.id)) & (CommitPrLink.sha.like(f"{prefix}%"))
+        for prefix in sha_prefixes
+    ]
+    from sqlalchemy import or_
+
+    links = session.execute(select(CommitPrLink.pr_number).where(or_(*conditions))).all()
+    pr_numbers = sorted({int(n) for (n,) in links})
+    if not pr_numbers:
+        return []
+
+    snippets: list[tuple[str, str]] = []
+    for pr_number in pr_numbers[:MAX_DISCUSSION_SNIPPETS]:
+        chunk = session.scalars(
+            select(DiscussionChunk)
+            .where(
+                DiscussionChunk.repo_id == int(repo_row.id),
+                DiscussionChunk.source_type == "pr_discussion",
+                DiscussionChunk.source_id.like(f"pr:{pr_number}#%"),
+            )
+            .order_by(DiscussionChunk.source_id)
+        ).first()
+        if chunk is None:
+            continue
+        text = (chunk.body or "").strip()[:SNIPPET_CHARS]
+        if text:
+            snippets.append((f"PR #{pr_number}", text))
+    return snippets
+
+
+def render_evidence_with_discussions(engine: Any, result: PathAResult) -> tuple[str, list[str]]:
+    bundle = render_evidence(result)
+    with Session(engine) as session:
+        snippets = _pr_discussion_snippets(session, result.repo, result.timeline)
+    if not snippets:
+        return bundle, []
+
+    lines = [bundle, "", "Linked PR discussion excerpts:"]
+    labels: list[str] = []
+    for label, text in snippets:
+        lines.append(f"[{label}]")
+        lines.append(text)
+        lines.append("")
+        labels.append(label.lower().replace(" ", ""))
+    enriched = "\n".join(lines)[: MAX_BUNDLE_CHARS + 3 * SNIPPET_CHARS]
+    return enriched, labels
 
 
 def synthesize_why(
@@ -79,9 +143,10 @@ def synthesize_why(
         )
 
     chosen_model = model or synthesis_model()
+    bundle, discussion_labels = render_evidence_with_discussions(engine, result)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": render_evidence(result)},
+        {"role": "user", "content": bundle},
     ]
     completion = chat_completion(messages, model=chosen_model, poster=poster)
 
@@ -107,7 +172,10 @@ def synthesize_why(
             model=completion.model,
         )
 
-    citations = [ev.sha for ev in result.timeline if f"[{ev.sha}" in completion.content]
+    citable = [ev.sha for ev in result.timeline] + [
+        label for label in discussion_labels if not label.startswith("PR #")
+    ]
+    citations = [sha for sha in citable if f"[{sha}" in completion.content]
     return SynthesisResult(
         status="answered",
         symbol=symbol,
