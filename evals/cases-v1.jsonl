@@ -22,3 +22,18 @@
 {"id": "recall-rfc-memo", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "why was memo introduced for function components", "top_k": 10, "expected_shas": ["text/0063"]}
 {"id": "recall-rfc-uses", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "what replaced useMutableSource and why", "top_k": 10, "expected_shas": ["text/0214"]}
 {"id": "recall-rfc-forwardref", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "how should refs be forwarded through function components", "top_k": 10, "expected_shas": ["text/0030", "pr:30"]}
+{"id": "attr-readContext", "path": "A", "kind": "attribution", "repo": "facebook/react", "symbol": "readContext", "file": "packages/react-reconciler/src/ReactFiberNewContext.js", "expected_sha": "47b003a828"}
+{"id": "attr-uses-native-wiring", "path": "A", "kind": "attribution", "repo": "facebook/react", "symbol": "useSyncExternalStore", "file": "packages/react/src/ReactHooks.js", "expected_sha": "77912d9a0"}
+{"id": "abstain-rfcs-no-code", "path": "A", "kind": "abstention", "repo": "reactjs/rfcs", "symbol": "useState", "expect_status": "abstained"}
+{"id": "recall-rfc-hooks", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "why were hooks introduced to react", "top_k": 10, "expected_shas": ["text/0068"]}
+{"id": "recall-rfc-server-components", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "what are server components and why do they exist", "top_k": 10, "expected_shas": ["text/0188"]}
+{"id": "recall-rfc-suspense-18", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "how does suspense work in react 18 concurrent rendering", "top_k": 10, "expected_shas": ["text/0213"]}
+{"id": "recall-rfc-profiler", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "why is there a profiler API for measuring renders", "top_k": 10, "expected_shas": ["text/0051"]}
+{"id": "recall-rfc-lazy", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "why does React.lazy exist for code splitting", "top_k": 10, "expected_shas": ["text/0064"]}
+{"id": "recall-rfc-static-lifecycle", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "why did getDerivedStateFromProps replace componentWillReceiveProps", "top_k": 10, "expected_shas": ["text/0006"]}
+{"id": "recall-rfc-snapshot", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "why was getSnapshotBeforeUpdate added to the commit phase", "top_k": 10, "expected_shas": ["text/0033"]}
+{"id": "recall-rfc-contexttype", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "what is contextType for class components", "top_k": 10, "expected_shas": ["text/0065"]}
+{"id": "recall-uses-native-wiring", "path": "B", "kind": "retrieval", "repo": "facebook/react", "query": "why does useSyncExternalStore need to wire a native subscription API", "top_k": 10, "expected_shas": ["77912d9a0", "pr:22237"]}
+{"id": "recall-mutable-source-predecessor", "path": "B", "kind": "retrieval", "repo": "reactjs/rfcs", "query": "how did useMutableSource work before the external store hook", "top_k": 10, "expected_shas": ["text/0147", "pr:147"]}
+{"id": "syn-readcontext", "path": "S", "kind": "synthesis", "repo": "facebook/react", "symbol": "readContext", "file": "packages/react-reconciler/src/ReactFiberNewContext.js", "expect": "answer", "expected_citations": ["47b003a828"]}
+{"id": "syn-uses-native-wiring", "path": "S", "kind": "synthesis", "repo": "facebook/react", "symbol": "useSyncExternalStore", "file": "packages/react/src/ReactHooks.js", "expect": "answer", "expected_citations": ["77912d9a0"]}
