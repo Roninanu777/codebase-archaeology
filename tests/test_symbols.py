@@ -57,6 +57,21 @@ def test_unknown_symbol_returns_none() -> None:
     assert resolve_symbol(JS_FN, "x.js", "nope") is None
 
 
+PYTHON_SRC = (
+    b"class Command:\n"
+    b"    def __init__(self, name):\n"
+    b"        self.name = name\n"
+    b"\n"
+    b"    def invoke(self):\n"
+    b"        return self.name\n"
+)
+
+
+def test_unsupported_language_abstains_discussion_only() -> None:
+    assert resolve_symbol(PYTHON_SRC, "core.py", "Command") is None
+    assert resolve_symbol(PYTHON_SRC, "core.py", "invoke") is None
+
+
 FLOW_SRC = (
     b"/** @flow */\n"
     b"\n"

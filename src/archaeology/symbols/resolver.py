@@ -29,6 +29,8 @@ _METHOD_KINDS = {"method_definition", "method_signature", "abstract_method_signa
 _VALUE_FUNCTION_KINDS = {"arrow_function", "function_expression", "generator_function"}
 _DECLARATOR_KINDS = {"variable_declarator"}
 
+_SUPPORTED_SUFFIXES = {"js", "jsx", "ts", "tsx"}
+
 
 def _languages_for(path: str) -> list[Language]:
     suffix = path.lower().rsplit(".", 1)[-1]
@@ -75,6 +77,9 @@ def resolve_symbol(
     path: str,
     symbol: str,
 ) -> SymbolSpan | None:
+    suffix = path.lower().rsplit(".", 1)[-1]
+    if suffix not in _SUPPORTED_SUFFIXES:
+        return None
     if symbol.encode() not in source:
         return None
     tree = _parse_best(source, path)
