@@ -47,6 +47,16 @@ def create_app(database_url: str | None = None) -> FastAPI:
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/repos")
+    def list_repos() -> list[dict[str, Any]]:
+        from sqlalchemy import select
+
+        from archaeology.storage.models import Repo as RepoModel
+
+        with Session(engine) as session:
+            names = session.scalars(select(RepoModel.name).order_by(RepoModel.name)).all()
+        return [repo_status(session, name) or {"name": name} for name in names]
+
     @app.post("/repos/index")
     def index_repo(request: IndexRequest) -> dict[str, Any]:
         try:
