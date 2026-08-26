@@ -10,7 +10,7 @@ import httpx
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-DEFAULT_SYNTHESIS_MODEL = "anthropic/claude-sonnet-5"
+DEFAULT_SYNTHESIS_MODEL = "stealth/ox-alpha"
 DEFAULT_ESCALATION_MODEL = "anthropic/haiku-4.5"
 
 
