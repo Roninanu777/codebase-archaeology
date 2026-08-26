@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import Any
 
+import pygit2
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,7 @@ from archaeology.storage.models import Commit, CommitPrLink, FileChange, PullReq
 SOURCE_COMMIT = "commit_message"
 SOURCE_PR_BODY = "pr_body"
 SOURCE_PR_DISCUSSION = "pr_discussion"
+SOURCE_DOC = "doc_file"
 
 MIN_BODY_CHARS = 20
 _MERGE_PREFIXES = ("Merge ", "Revert ")
@@ -205,6 +208,116 @@ def pr_chunks(
 
         if limit is not None and produced >= limit:
             return
+
+
+def split_markdown(text: str, max_chars: int = MAX_SUBCHUNK_CHARS) -> list[str]:
+    """Split markdown on heading boundaries into bins under max_chars."""
+    lines = text.splitlines(keepends=True)
+    sections: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if current:
+            sections.append("".join(current).strip())
+
+    for line in lines:
+        if line.startswith("## ") and current:
+            flush()
+            current = []
+        current.append(line)
+    flush()
+
+    bins: list[str] = []
+    for section in sections:
+        if len(section) <= max_chars:
+            bins.append(section)
+            continue
+        paragraphs = section.split("\n\n")
+        bin_text = ""
+        for para in paragraphs:
+            if bin_text and len(bin_text) + len(para) + 2 > max_chars:
+                bins.append(bin_text.strip())
+                bin_text = ""
+            bin_text += para + "\n\n"
+        if bin_text.strip():
+            bins.append(bin_text.strip())
+    return [b for b in bins if b]
+
+
+def doc_chunks(
+    repo: Any,
+    head_sha: str,
+    exclude_source_ids: set[tuple[str, str]] | None = None,
+) -> Iterator[ChunkDraft]:
+
+    exclude = exclude_source_ids or set()
+    root = repo[head_sha].tree
+    stack: list[tuple[Any, str]] = [(root, "")]
+    md_files: list[str] = []
+    while stack:
+        tree, prefix = stack.pop()
+        for entry in tree:
+            full = f"{prefix}{entry.name}"
+            if int(entry.type) == 2:
+                stack.append((repo[entry.id], f"{full}/"))
+            elif entry.name.lower().endswith(".md"):
+                md_files.append(full)
+
+    last_commit_date: dict[str, str] = {}
+    for commit in repo.walk(repo.head.target, int(pygit2.enums.SortMode.TIME)):
+        iso = _commit_iso(commit)
+        if iso is None:
+            continue
+        for touched_path in _commit_touched_paths(repo, commit):
+            if touched_path not in last_commit_date:
+                last_commit_date[touched_path] = iso
+
+    for rel_path in sorted(md_files):
+        try:
+            blob = repo[root[rel_path].id]
+        except KeyError:
+            continue
+        text = blob.data.decode("utf-8", errors="replace")
+        title_source = text.lstrip("# ").splitlines()[0] if text.strip() else rel_path
+        base_title = title_source[:120] or rel_path
+        authored = last_commit_date.get(rel_path)
+
+        bins = split_markdown(text)
+        for index, bin_text in enumerate(bins, start=1):
+            source_id = f"{rel_path}#{index}" if len(bins) > 1 else rel_path
+            if (SOURCE_DOC, source_id) in exclude:
+                continue
+            yield ChunkDraft(
+                source_type=SOURCE_DOC,
+                source_id=source_id,
+                authored_at=authored,
+                title=f"{rel_path}: {base_title}",
+                body=bin_text,
+                files_touched=[rel_path],
+                linked_commits=[],
+            )
+
+
+def _commit_iso(commit: Any) -> str | None:
+    from datetime import UTC, datetime
+
+    ts = getattr(commit, "commit_time", 0)
+    return datetime.fromtimestamp(ts, tz=UTC).isoformat() if ts else None
+
+
+def _commit_touched_paths(repo: Any, commit: Any) -> list[str]:
+    paths: list[str] = []
+    try:
+        parents = commit.parent_ids
+        base = repo[parents[0]].tree if parents else None
+        diff = base.diff_to_tree(commit.tree) if base else commit.tree.diff_to_tree()
+        for delta in diff.deltas:
+            path = delta.new_file.path or delta.old_file.path
+            if path:
+                paths.append(path)
+    except Exception:
+        pass
+    return paths
 
 
 def count_chunkable(session: Session, repo_id: int) -> int:

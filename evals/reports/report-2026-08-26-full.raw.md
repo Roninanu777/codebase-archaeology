@@ -2,56 +2,60 @@
 
 ## attribution (A)
 
-**9/9** passed - avg 57ms - p95 85ms
+**9/9** passed - avg 56ms - p95 81ms
 
 | case | ok | detail | latency ms |
 |---|---|---|---|
-| attr-createRoot | yes | introduced b8f825877 | 49 |
+| attr-createRoot | yes | introduced b8f825877 | 57 |
 | attr-reconcileChildFibers | yes | introduced d4f58c3b8 | 54 |
-| attr-renderWithHooks | yes | introduced 7bee9fbdd | 194 |
-| attr-scheduleUpdateOnFiber | yes | introduced 9055e31e5 | 85 |
-| attr-flushSyncFromReconciler | yes | introduced 9055e31e5 | 82 |
-| attr-createContext | yes | introduced 87ae211cc | 12 |
-| attr-throwException | yes | introduced 8af1f8792 | 22 |
-| attr-memo | yes | introduced a0733fe13 | 10 |
-| attr-forwardRef | yes | introduced bc70441c8 | 9 |
+| attr-renderWithHooks | yes | introduced 7bee9fbdd | 195 |
+| attr-scheduleUpdateOnFiber | yes | introduced 9055e31e5 | 81 |
+| attr-flushSyncFromReconciler | yes | introduced 9055e31e5 | 81 |
+| attr-createContext | yes | introduced 87ae211cc | 8 |
+| attr-throwException | yes | introduced 8af1f8792 | 19 |
+| attr-memo | yes | introduced a0733fe13 | 6 |
+| attr-forwardRef | yes | introduced bc70441c8 | 7 |
 
 ## abstention (A)
 
-**1/1** passed - avg 802ms - p95 802ms
+**1/1** passed - avg 744ms - p95 744ms
 
 | case | ok | detail | latency ms |
 |---|---|---|---|
-| abstain-bogus-symbol | yes | status=abstained reason=symbol_not_found | 802 |
+| abstain-bogus-symbol | yes | status=abstained reason=symbol_not_found | 744 |
 
 ## retrieval (B)
 
-**3/3** passed - avg 12484ms - p95 6255ms
+**7/7** passed - avg 8675ms - p95 7459ms
 
 | case | ok | detail | latency ms |
 |---|---|---|---|
-| recall-ums-removal | yes | matched 80d9a4011 at rank 5 | 25175 |
-| recall-act-use | yes | matched c63580787 at rank 5 | 6255 |
-| recall-context-api | yes | matched 87ae211ccd at rank 15 | 6023 |
+| recall-ums-removal | yes | matched 80d9a4011 at rank 5 | 23953 |
+| recall-act-use | yes | matched c63580787 at rank 5 | 5442 |
+| recall-context-api | yes | matched pr:11818 at rank 2 | 6217 |
+| recall-rfc-createroot | yes | matched text/0212 at rank 2 | 6795 |
+| recall-rfc-memo | yes | matched text/0063 at rank 1 | 7459 |
+| recall-rfc-uses | yes | matched text/0214 at rank 1 | 5241 |
+| recall-rfc-forwardref | yes | matched pr:30 at rank 2 | 5617 |
 
 ## known_gap (B)
 
-**2/2** passed - avg 7810ms - p95 7515ms
+**2/2** passed - avg 7054ms - p95 6934ms
 
 | case | ok | detail | latency ms |
 |---|---|---|---|
-| gap-lanes-rationale | yes | gap confirmed (truth absent from corpus); VERIFIED ABSENT: #19108 discussion is a devtools-debugging thread, zero 'lane' mentions; rationale lives in rfcs/blogs outside GitHub PRs | 7515 |
-| gap-create-root-vs-render | yes | gap confirmed (truth absent from corpus); VERIFIED ABSENT: #17331 discussion has zero createRoot/render mentions; migration rationale lives in blogs/talks outside the repo | 8104 |
+| gap-lanes-rationale | yes | gap confirmed (truth absent from corpus); VERIFIED ABSENT twice: zero 'lane' mentions in facebook/react #19108 discussion AND in reactjs/rfcs texts+discussions; rationale is blog/talks-only | 6934 |
+| gap-create-root-vs-render | yes | gap confirmed (truth absent from corpus); VERIFIED ABSENT: #17331 discussion has zero createRoot/render mentions; migration rationale lives in blogs/talks outside the repo | 7174 |
 
 ## synthesis (S)
 
-**5/5** passed - avg 11873ms - p95 13869ms
+**1/1** passed - avg 813ms - p95 813ms
 
 | case | ok | detail | latency ms |
 |---|---|---|---|
-| syn-createRoot | yes | cited b8f825877,3f85d53ca,ccab49473,823dc581f,142d4f1c0,9fba65efa,356c17108,848bb2426,993ca533b, | 19714 |
-| syn-memo-pure-origin | yes | cited a0733fe13,40a521aa7,15b11d23f,769b1f270,9ac42dd07,b15bf3675,0cf22a56a,c5d2fc712,416942019, | 11979 |
-| syn-forwardRef-rfc30 | yes | cited bc70441c8,920f30ef7,095dd5049,f89f25f47,f9358c51c,ecbf7af40,c898020e0,9ac42dd07,b15bf3675, | 12954 |
-| syn-context-api | yes | cited 87ae211cc,28aa084ad,ad9544f48,ba245f6f9,b0726e994,f9358c51c,2b509e2c8,2a2ef7e0f,1bc975d07, | 13869 |
-| syn-bogus-abstains-free | yes | status=abstained reason=symbol_not_found | 850 |
+| syn-createRoot | skip | llm_unavailable: OPENROUTER_API_KEY is not set; get one at https://openrouter.ai/keys | 150 |
+| syn-memo-pure-origin | skip | llm_unavailable: OPENROUTER_API_KEY is not set; get one at https://openrouter.ai/keys | 101 |
+| syn-forwardRef-rfc30 | skip | llm_unavailable: OPENROUTER_API_KEY is not set; get one at https://openrouter.ai/keys | 109 |
+| syn-context-api | skip | llm_unavailable: OPENROUTER_API_KEY is not set; get one at https://openrouter.ai/keys | 111 |
+| syn-bogus-abstains-free | yes | status=abstained reason=symbol_not_found | 813 |
 

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from archaeology.retrieval.chunking import (
     ChunkDraft,
     commit_chunks,
+    doc_chunks,
     pr_chunks,
     render_chunk_text,
 )
@@ -113,6 +114,7 @@ def embed_repo(
         drafts_iter = itertools.chain(
             commit_chunks(session, repo_id, limit=limit, exclude_source_ids=existing),
             pr_chunks(session, repo_id, limit=limit, exclude_source_ids=existing),
+            doc_chunks(git_repo, db_repo.head_sha or "", exclude_source_ids=existing),
         )
         for draft in drafts_iter:
             buffer_texts.append(render_chunk_text(draft))

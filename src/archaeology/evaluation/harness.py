@@ -23,6 +23,7 @@ class CaseResult:
     passed: bool
     detail: str
     latency_s: float
+    skipped: bool = False
 
 
 @dataclass(slots=True)
@@ -33,10 +34,13 @@ class Report:
         self.results.append(result)
 
     def metric(self, path: str, kind: str) -> tuple[int, int] | None:
-        rows = [r for r in self.results if r.path == path and r.kind == kind]
+        rows = [r for r in self.results if r.path == path and r.kind == kind and not r.skipped]
         if not rows:
             return None
         return sum(1 for r in rows if r.passed), len(rows)
+
+    def skipped_for(self, path: str, kind: str) -> list[CaseResult]:
+        return [r for r in self.results if r.path == path and r.kind == kind and r.skipped]
 
     def to_markdown(self, title: str) -> str:
         lines = [f"# {title}", ""]
@@ -49,21 +53,31 @@ class Report:
         ]
         for path, kind in groups:
             metric = self.metric(path, kind)
-            if metric is None:
+            skipped = self.skipped_for(path, kind)
+            if metric is None and not skipped:
                 continue
-            correct, total = metric
-            latencies = [r.latency_s for r in self.results if r.path == path and r.kind == kind]
-            avg_ms = 1000 * sum(latencies) / max(len(latencies), 1)
-            p95_ms = 1000 * sorted(latencies)[int(0.95 * (len(latencies) - 1))]
             lines.append(f"## {kind} ({path})")
             lines.append("")
-            lines.append(f"**{correct}/{total}** passed - avg {avg_ms:.0f}ms - p95 {p95_ms:.0f}ms")
+            if metric is not None:
+                correct, total = metric
+                latencies = [
+                    r.latency_s
+                    for r in self.results
+                    if r.path == path and r.kind == kind and not r.skipped
+                ]
+                avg_ms = 1000 * sum(latencies) / max(len(latencies), 1)
+                p95_ms = 1000 * sorted(latencies)[int(0.95 * (len(latencies) - 1))]
+                lines.append(
+                    f"**{correct}/{total}** passed - avg {avg_ms:.0f}ms - p95 {p95_ms:.0f}ms"
+                )
+            else:
+                lines.append(f"**SKIPPED ({len(skipped)})**")
             lines.append("")
             lines.append("| case | ok | detail | latency ms |")
             lines.append("|---|---|---|---|")
             for r in self.results:
                 if r.path == path and r.kind == kind:
-                    mark = "yes" if r.passed else "**NO**"
+                    mark = "skip" if r.skipped else ("yes" if r.passed else "**NO**")
                     lines.append(f"| {r.id} | {mark} | {r.detail} | {1000 * r.latency_s:.0f} |")
             lines.append("")
         return "\n".join(lines)
@@ -140,13 +154,24 @@ def _run_case(
     elif kind == "synthesis":
         from archaeology.routes.synthesis import synthesize_why
 
-        synth = synthesize_why(
-            engine,
-            case["repo"],
-            case["symbol"],
-            file=case.get("file"),
-            model=case.get("model"),
-        )
+        try:
+            synth = synthesize_why(
+                engine,
+                case["repo"],
+                case["symbol"],
+                file=case.get("file"),
+                model=case.get("model"),
+            )
+        except Exception as exc:
+            return CaseResult(
+                id=case["id"],
+                path=path,
+                kind=kind,
+                passed=False,
+                detail=f"llm_unavailable: {str(exc)[:100]}",
+                latency_s=time.monotonic() - started,
+                skipped=True,
+            )
         expect = case.get("expect", "answer")
         if expect == "abstain":
             passed = synth.status == "abstained"
