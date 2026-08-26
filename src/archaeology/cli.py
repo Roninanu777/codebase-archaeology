@@ -11,9 +11,10 @@ from archaeology.config import DATABASE_URL
 from archaeology.ingest.git import ingest_repository
 from archaeology.ingest.tier2 import backfill_pull_requests
 from archaeology.retrieval.embed import Embedder, embed_repo
+from archaeology.retrieval.rerank import Reranker
 from archaeology.retrieval.search import hybrid_search
 from archaeology.routes.path_a import PathAResult, why_symbol
-from archaeology.routes.synthesis import synthesize_why
+from archaeology.routes.synthesis import answer_any
 from archaeology.storage.models import CommitSignificance, Repo
 
 
@@ -99,7 +100,16 @@ def _cmd_backfill_prs(args: argparse.Namespace) -> int:
 
 def _cmd_answer(args: argparse.Namespace) -> int:
     engine = create_engine(args.database_url or DATABASE_URL)
-    result = synthesize_why(engine, args.name, args.symbol, file=args.file)
+    routed = answer_any(
+        engine,
+        args.name,
+        args.query,
+        file=args.file,
+        embedder=Embedder(),
+        reranker=Reranker(),
+    )
+    result = routed["synthesis"]
+    print(f"[path {routed['path']}]")
     if result.status != "answered":
         print(f"ABSTAINED ({result.abstained_reason})")
         return 0
@@ -194,10 +204,10 @@ def main(argv: list[str] | None = None) -> int:
     p_prs.set_defaults(func=_cmd_backfill_prs)
 
     p_ans = subparsers.add_parser(
-        "answer", help="Path A + LLM synthesis via OpenRouter (needs OPENROUTER_API_KEY)"
+        "answer", help="routed LLM synthesis (Path A or B) via OpenRouter"
     )
     p_ans.add_argument("name")
-    p_ans.add_argument("symbol")
+    p_ans.add_argument("query", help="symbol or natural-language question")
     p_ans.add_argument("--file", default=None)
     p_ans.add_argument("--database-url", default=None)
     p_ans.set_defaults(func=_cmd_answer)

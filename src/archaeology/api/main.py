@@ -15,9 +15,10 @@ from archaeology.classify.backfill import backfill_ast_features
 from archaeology.config import DATABASE_URL
 from archaeology.ingest.git import ingest_repository
 from archaeology.retrieval.embed import Embedder
+from archaeology.retrieval.rerank import Reranker
 from archaeology.retrieval.search import hybrid_search
 from archaeology.routes.path_a import why_symbol
-from archaeology.routes.synthesis import synthesize_why
+from archaeology.routes.synthesis import answer_any, synthesize_why
 from archaeology.storage.status import repo_status
 
 
@@ -26,6 +27,11 @@ class IndexRequest(BaseModel):
     name: str
     url: str | None = None
     classify: bool = True
+
+
+class AnswerRequest(BaseModel):
+    query: str
+    file: str | None = None
 
 
 def _engine(url: str | None = None) -> Any:
@@ -117,6 +123,36 @@ def create_app(database_url: str | None = None) -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _payload(result)
+
+    @app.post("/repos/{name:path}/answer")
+    def post_answer(name: str, body: AnswerRequest) -> dict[str, Any]:
+        try:
+            routed = answer_any(
+                engine,
+                name,
+                body.query,
+                file=body.file,
+                embedder=Embedder(),
+                reranker=Reranker(),
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        payload: dict[str, Any] = {
+            "path": routed["path"],
+            "query": body.query,
+            **_payload(routed["synthesis"]),
+        }
+        evidence = routed["evidence"]
+        if evidence is not None:
+            payload["hits"] = _payload(evidence)["hits"]
+            payload["abstained_reason"] = (
+                payload.get("abstained_reason") or evidence.abstained_reason
+            )
+        with Session(engine) as session:
+            payload["index_status"] = repo_status(session, name)
+        return payload
 
     @app.get("/repos/{name:path}/ask")
     def post_ask(name: str, q: str, n: int = 10) -> dict[str, Any]:

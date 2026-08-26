@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,6 +15,16 @@ MAX_BODY_CHARS = 400
 MAX_BUNDLE_CHARS = 9_000
 MAX_DISCUSSION_SNIPPETS = 3
 SNIPPET_CHARS = 700
+
+MAX_QUESTION_HITS = 8
+MAX_HIT_BODY_CHARS = 500
+
+_SYMBOL_RE = re.compile(r"^[\w$]+(\.\w+)?$")
+
+
+def looks_like_symbol(query: str) -> bool:
+    return bool(_SYMBOL_RE.match(query.strip())) and len(query.strip()) > 1
+
 
 SYSTEM_PROMPT = """You answer "why does this code exist" questions using ONLY the supplied evidence.
 
@@ -172,6 +183,15 @@ def synthesize_why(
             model=completion.model,
         )
 
+    if not completion.content.strip():
+        return SynthesisResult(
+            status="abstained",
+            symbol=symbol,
+            repo=repo_name,
+            abstained_reason="empty_generation: model returned no content",
+            model=completion.model,
+        )
+
     citable = [ev.sha for ev in result.timeline] + [
         label for label in discussion_labels if not label.startswith("PR #")
     ]
@@ -184,3 +204,145 @@ def synthesize_why(
         citations=citations,
         model=completion.model,
     )
+
+
+def render_hits_bundle(question: str, hits: list[Any], bodies: dict[str, str]) -> str:
+    lines = [f"Question: {question}", "", "Evidence (ranked by relevance):"]
+    for hit in hits:
+        source_id = hit.sha
+        date = f" {hit.authored_at}" if hit.authored_at else ""
+        lines.append(f"[{source_id}]{date} {hit.title}")
+        body = bodies.get(source_id, "").strip()
+        if body:
+            trimmed = body[:MAX_HIT_BODY_CHARS]
+            if len(body) > MAX_HIT_BODY_CHARS:
+                trimmed += "..."
+            lines.append(f"    {trimmed}")
+        lines.append("")
+    return "\n".join(lines)[:MAX_BUNDLE_CHARS]
+
+
+def synthesize_question(
+    engine: Any,
+    repo_name: str,
+    question: str,
+    n: int = MAX_QUESTION_HITS,
+    model: str | None = None,
+    poster: Any = None,
+    embedder: Any = None,
+    reranker: Any = None,
+) -> tuple[SynthesisResult, Any]:
+    from archaeology.retrieval.search import hybrid_search
+
+    search_result = hybrid_search(engine, embedder, repo_name, question, top_n=n, reranker=reranker)
+
+    def abstain(reason: str) -> tuple[SynthesisResult, Any]:
+        return (
+            SynthesisResult(
+                status="abstained",
+                symbol=question,
+                repo=repo_name,
+                abstained_reason=reason,
+            ),
+            search_result,
+        )
+
+    if search_result.abstained_reason == "no_hits" or not search_result.hits:
+        return abstain("no_hits")
+
+    from sqlalchemy import select
+
+    from archaeology.storage.models import DiscussionChunk
+
+    with Session(engine) as session:
+        chunk_rows = session.scalars(
+            select(DiscussionChunk).where(
+                DiscussionChunk.id.in_([h.chunk_id for h in search_result.hits])
+            )
+        ).all()
+    bodies = {str(c.source_id)[:9]: (c.body or "") for c in chunk_rows}
+
+    chosen_model = model or synthesis_model()
+    bundle = render_hits_bundle(question, search_result.hits, bodies)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": bundle},
+    ]
+    completion = chat_completion(messages, model=chosen_model, poster=poster)
+
+    with Session(engine) as session:
+        trace_call(
+            session,
+            stage="synthesis",
+            model=completion.model,
+            prompt=bundle,
+            response=completion.content,
+            latency_ms=completion.latency_ms,
+            prompt_tokens=completion.prompt_tokens,
+            completion_tokens=completion.completion_tokens,
+        )
+        session.commit()
+
+    if completion.content.startswith("INSUFFICIENT_EVIDENCE"):
+        return (
+            SynthesisResult(
+                status="abstained",
+                symbol=question,
+                repo=repo_name,
+                abstained_reason=completion.content,
+                model=completion.model,
+            ),
+            search_result,
+        )
+
+    if not completion.content.strip():
+        return (
+            SynthesisResult(
+                status="abstained",
+                symbol=question,
+                repo=repo_name,
+                abstained_reason="empty_generation: model returned no content",
+                model=completion.model,
+            ),
+            search_result,
+        )
+
+    hit_ids = [h.sha for h in search_result.hits]
+    citations = [sid for sid in hit_ids if f"[{sid}" in completion.content]
+    return (
+        SynthesisResult(
+            status="answered",
+            symbol=question,
+            repo=repo_name,
+            answer=completion.content,
+            citations=citations,
+            model=completion.model,
+        ),
+        search_result,
+    )
+
+
+def answer_any(
+    engine: Any,
+    repo_name: str,
+    query: str,
+    file: str | None = None,
+    model: str | None = None,
+    poster: Any = None,
+    embedder: Any = None,
+    reranker: Any = None,
+) -> dict[str, Any]:
+    """Router: symbol-looking queries go to Path A, prose to Path B."""
+    if looks_like_symbol(query):
+        result = synthesize_why(engine, repo_name, query, file=file, model=model, poster=poster)
+        return {"path": "A", "synthesis": result, "evidence": None}
+    result, search_result = synthesize_question(
+        engine,
+        repo_name,
+        query,
+        model=model,
+        poster=poster,
+        embedder=embedder,
+        reranker=reranker,
+    )
+    return {"path": "B", "synthesis": result, "evidence": search_result}

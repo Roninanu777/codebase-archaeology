@@ -59,12 +59,29 @@ export interface AskResult {
 }
 
 export interface AnswerResult {
+  path: "A" | "B";
+  query: string;
   status: string;
-  symbol: string;
   answer: string | null;
   abstained_reason: string | null;
   citations: string[];
   model: string | null;
+  hits?: SearchHit[] | null;
+  index_status: IndexStatus | null;
+}
+
+export function answerRouted(repo: string, query: string): Promise<AnswerResult> {
+  return fetch(`${API_BASE}/repos/${encodeURIComponent(repo)}/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail ?? `API ${res.status}`);
+    }
+    return res.json() as Promise<AnswerResult>;
+  });
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -89,16 +106,5 @@ export function why(repo: string, symbol: string): Promise<WhyResult> {
 export function ask(repo: string, q: string, n = 10): Promise<AskResult> {
   return getJson<AskResult>(
     `/repos/${encodeURIComponent(repo)}/ask?q=${encodeURIComponent(q)}&n=${n}`
-  );
-}
-
-export function answer(
-  repo: string,
-  symbol: string,
-  file: string | null
-): Promise<AnswerResult> {
-  const fileParam = file ? `&file=${encodeURIComponent(file)}` : "";
-  return getJson<AnswerResult>(
-    `/repos/${encodeURIComponent(repo)}/answer/${encodeURIComponent(symbol)}?1=1${fileParam}`
   );
 }

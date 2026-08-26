@@ -32,7 +32,9 @@ Poster = Callable[[str, dict[str, Any], dict[str, str]], dict[str, Any]]
 
 def _default_poster(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
     response = httpx.post(url, json=payload, headers=headers, timeout=120.0)
-    response.raise_for_status()
+    if response.status_code >= 400:
+        detail = response.text[:200]
+        raise RuntimeError(f"OpenRouter error {response.status_code}: {detail}")
     result: dict[str, Any] = response.json()
     return result
 
@@ -59,14 +61,22 @@ def chat_completion(
         "temperature": temperature,
     }
     started = time.monotonic()
-    if poster is not None:
-        raw = poster(OPENROUTER_URL, payload, {})
-    else:
-        headers = {
-            "Authorization": f"Bearer {api_key()}",
-            "Content-Type": "application/json",
-        }
-        raw = _default_poster(OPENROUTER_URL, payload, headers)
+    attempts = 2
+    raw: dict[str, Any] = {}
+    for attempt in range(attempts):
+        if poster is not None:
+            raw = poster(OPENROUTER_URL, payload, {})
+        else:
+            headers = {
+                "Authorization": f"Bearer {api_key()}",
+                "Content-Type": "application/json",
+            }
+            raw = _default_poster(OPENROUTER_URL, payload, headers)
+        choices = raw.get("choices") or []
+        if choices and (choices[0]["message"].get("content") or "").strip():
+            break
+        if attempt == 0 and poster is None:
+            time.sleep(2.0)
     latency_ms = int((time.monotonic() - started) * 1000)
 
     choices = raw.get("choices") or []

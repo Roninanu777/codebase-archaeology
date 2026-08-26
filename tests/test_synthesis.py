@@ -129,3 +129,12 @@ def test_insufficient_evidence_response_becomes_abstention(
     assert result.status == "abstained"
     reason = result.abstained_reason or ""
     assert reason.startswith("INSUFFICIENT_EVIDENCE")
+
+
+def test_router_sends_symbols_and_prose_down_different_paths() -> None:
+    from archaeology.routes.synthesis import looks_like_symbol
+
+    assert looks_like_symbol("createRoot") is True
+    assert looks_like_symbol("React.memo") is True
+    assert looks_like_symbol("can you tell me how does the reconciler work?") is False
+    assert looks_like_symbol("why lanes") is False

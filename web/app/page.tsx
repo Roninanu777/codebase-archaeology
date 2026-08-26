@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  answer,
+  answerRouted,
   ask,
   listRepos,
   why,
@@ -17,7 +17,7 @@ type Mode = "auto" | "symbol" | "search";
 type Result =
   | { kind: "why"; data: WhyResult }
   | { kind: "ask"; data: AskResult }
-  | { kind: "answer"; data: AnswerResult; why: WhyResult }
+  | { kind: "answer"; data: AnswerResult; why?: WhyResult; ask?: AskResult }
   | null;
 
 function looksLikeSymbol(input: string) {
@@ -68,9 +68,15 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      const w = await why(repo, query.trim());
-      const a = await answer(repo, query.trim(), w.rel_path);
-      setResult({ kind: "answer", data: a, why: w });
+      const data = await answerRouted(repo, query.trim());
+      let whyData: WhyResult | undefined;
+      let askData: AskResult | undefined;
+      if (data.path === "A") {
+        whyData = await why(repo, query.trim());
+      } else if (data.hits?.length) {
+        askData = { query, abstained_reason: null, hits: data.hits, index_status: data.index_status };
+      }
+      setResult({ kind: "answer", data, why: whyData, ask: askData });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -173,21 +179,24 @@ export default function Home() {
 
       {result?.kind === "answer" && (
         <section className="mt-8 space-y-6">
-          {result.data.status === "answered" ? (
+          {result.data.status === "answered" && result.data.answer?.trim() ? (
             <article className="rounded-lg border border-gray-200 bg-white p-5 leading-relaxed whitespace-pre-wrap">
               {result.data.answer}
             </article>
           ) : (
             <AbstentionBanner reason={result.data.abstained_reason ?? "abstained"} />
           )}
-          <details>
-            <summary className="cursor-pointer text-sm text-gray-500">
-              underlying evidence timeline
-            </summary>
-            <div className="mt-3">
-              <WhyView repo={repo} data={result.why} />
-            </div>
-          </details>
+          {(result.why || result.ask) && (
+            <details>
+              <summary className="cursor-pointer text-sm text-gray-500">
+                underlying evidence {result.data.path === "A" ? "timeline" : "hits"}
+              </summary>
+              <div className="mt-3">
+                {result.why && <WhyView repo={repo} data={result.why} />}
+                {result.ask && <AskView repo={repo} data={result.ask} />}
+              </div>
+            </details>
+          )}
         </section>
       )}
     </main>
