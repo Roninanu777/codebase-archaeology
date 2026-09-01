@@ -1,9 +1,9 @@
-from archaeology.storage.base import Base
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from archaeology.api.main import create_app
 from archaeology.llm.tracing import trace_call
+from archaeology.storage.base import Base
 from archaeology.storage.models import Trace
 
 

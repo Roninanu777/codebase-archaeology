@@ -1,11 +1,11 @@
 from logging.config import fileConfig
 
 from alembic import context
-from archaeology.storage.base import Base
 from sqlalchemy import engine_from_config, pool
 
 import archaeology.storage.models
 from archaeology.config import DATABASE_URL
+from archaeology.storage.base import Base
 
 config = context.config
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
