@@ -56,6 +56,9 @@ def test_index_endpoint_idempotent(synthetic_js_repo: SyntheticRepo, tmp_path: P
     assert response.json()["ingest"]["skipped"] is True
 
 
-def test_unknown_repo_status_404() -> None:
-    client = TestClient(create_app())
+def test_unknown_repo_status_404(tmp_path: Path) -> None:
+    url = f"sqlite:///{tmp_path / 'empty.db'}"
+    engine = create_engine(url)
+    Base.metadata.create_all(engine)
+    client = TestClient(create_app(url))
     assert client.get("/repos/ghost/status").status_code == 404
