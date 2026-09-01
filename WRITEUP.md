@@ -188,6 +188,44 @@ uv run python -m archaeology.evaluation.harness evals/cases-v1.jsonl
 
 Test suite: 49 green under ruff + mypy `strict`; CI mirrors the same gates.
 
+## 6. Addendum — the live phase (M18–21)
+
+The four milestones after this document's first draft were driven by actually
+using the tool, and they produced the most instructive findings of the build:
+
+**The model caught my pipeline bugs twice more.** Switching synthesis to
+`stealth/ox-alpha` (owner choice; Sonnet 5 remains the measured reference),
+the model responded to a thin-looking bundle with an INSUFFICIENT_EVIDENCE
+that was precisely correct: binned discussions were losing 11 of 12 bodies to
+a `source_id[:9]` truncation collision, so the bundle really did contain
+titles only. A second abstention correctly identified that the removal-PRs
+never argued rationale — the why lives in RFC 0214, in the *other* repo.
+Both were pipeline defects my evals had not caught, surfaced by the honesty
+protocol doing its job.
+
+**Cross-repo synthesis required per-repo retrieval, not a bigger pool.**
+Naively widening the dense/sparse candidate pool to the union of all repos
+diluted per-corpus recall — RFC 0214 ranked first *within* reactjs/rfcs yet
+never reached the reranker from the 59k-chunk union. The fix: retrieve per
+repo, then merge candidates and rerank once across the combined pool. Each
+corpus contributes its best before the cross-encoder arbitrates.
+
+**A browser-only failure class.** The UI worked in every curl smoke test and
+failed for every human: FastAPI had no CORS middleware, and curl bypasses
+CORS by construction. Fixed, and the lesson recorded: smoke-test the client
+surface the client actually uses.
+
+**The router gap.** The UI's Explain button called Path A regardless of input
+shape — because Path B synthesis did not exist. `answer_any` now routes
+symbol-shaped queries to Path A and prose to Path B (searching every indexed
+repo), completing the "merge at synthesis" design.
+
+**Free-tier mechanics, handled mechanically.** Paid models 402 on a free-tier
+key; free models throttled or hung; empty generations arrived as blank 200s.
+The system's answer is uniform: visible abstention reasons, one retry on
+429/empty, bounded timeouts, and errors surfaced as messages — no blank
+boxes, no invented prose.
+
 ## 7. Milestone ledger
 
 Scaffold+dig (M0) · tier-1 ingest+floor (1) · Path A (2) · AST layer (3) ·
@@ -196,4 +234,7 @@ tier-2 PRs, 54k-chunk corpus corrections (7) · rerank (8) · sub-chunking +
 self-correction (9) · OpenRouter synthesis (10) · web UI (11) · live cited
 answers + enrichment (12) · synthesis axis, all axes measured (13) · second
 repo, gaps resolved-or-verified (14) · 39-case board (15) · unseen-repo E2E
-(16) · this document (17).
+(16) · this document (17) · synthesis model A/B, model catches bugs again
+(18) · web surfaces live; CORS + router fixes (19) · cross-repo synthesis
++ per-repo merge (20) · UI overhaul: markdown answers, provenance badges,
+evidence-first rendering (21).
