@@ -3,8 +3,8 @@
 Answers "why does this code exist?" from git history, PR discussions, and linked
 issues — every claim cited to a commit or comment, and every *tool claim* in this
 document traceable to a file in `evals/reports/` or a test in this repo.
-Architecture lives in [`DESIGN.md`](../DESIGN.md); glossary in
-[`CONTEXT.md`](../CONTEXT.md). This document covers what was built, what broke,
+Architecture lives in [`docs/DESIGN.md`](docs/DESIGN.md); glossary in
+[`docs/CONTEXT.md`](docs/CONTEXT.md). This document covers what was built, what broke,
 which tradeoffs were made under uncertainty, and the measured numbers.
 
 ---
