@@ -29,7 +29,9 @@ def looks_like_symbol(query: str) -> bool:
 SYSTEM_PROMPT = """You answer "why does this code exist" questions using ONLY the supplied evidence.
 
 Rules:
-- Cite evidence with its short sha in brackets like [b8f825877] at every factual claim.
+- Every factual claim must carry an inline citation in EXACT bracket form,
+  like [9055e31e5] or [pr:19108]. Plain mentions like "PR #19108" are not
+  citations; always use the bracket form with the evidence's own id.
 - Present the arc chronologically when decisions changed over time.
 - If the evidence does not contain the reasoning, reply with exactly one line:
   INSUFFICIENT_EVIDENCE: <what is missing>
@@ -349,6 +351,10 @@ def synthesize_question(
 
     hit_ids = [h.sha for h in search_result.hits]
     citations = [sid for sid in hit_ids if f"[{sid}" in completion.content]
+    if not citations:
+        pr_in_hits = {int(h.sha[3:]) for h in search_result.hits if h.sha.startswith("pr:")}
+        mentioned = {int(m) for m in re.findall(r"#(\d{2,6})", completion.content)}
+        citations = [f"pr:{n}" for n in sorted(mentioned & pr_in_hits)]
     return (
         SynthesisResult(
             status="answered",

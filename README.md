@@ -58,7 +58,7 @@ Point any MCP client at the stdio server; both surfaces wrap the same core.
 
 ```sh
 export OPENROUTER_API_KEY="sk-or-..."        # https://openrouter.ai/keys
-export ARCHAEOLOGY_SYNTHESIS_MODEL="stealth/ox-alpha"   # optional override
+export ARCHAEOLOGY_SYNTHESIS_MODEL="deepseek/deepseek-v4-flash-0731"   # optional override
 uv run python -m archaeology.cli answer facebook/react createRoot --file packages/react-dom/src/client/ReactDOMRoot.js
 ```
 

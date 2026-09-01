@@ -10,7 +10,7 @@ import httpx
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-DEFAULT_SYNTHESIS_MODEL = "stealth/ox-alpha"
+DEFAULT_SYNTHESIS_MODEL = "deepseek/deepseek-v4-flash-0731"
 DEFAULT_ESCALATION_MODEL = "anthropic/haiku-4.5"
 
 
