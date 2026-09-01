@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { SearchHit } from "@/lib/api";
 import { hitUrl } from "@/lib/format";
+import { MermaidPanel } from "@/components/MermaidPanel";
 
 function linkifyCitations(md: string, links: Record<string, string>): string {
   return md.replace(/\[([^\]\n]{2,60})\]/g, (match, inner: string) => {
@@ -16,9 +17,11 @@ function linkifyCitations(md: string, links: Record<string, string>): string {
 export function AnswerCard({
   answer,
   hits,
+  mermaid,
 }: {
   answer: string;
   hits: SearchHit[];
+  mermaid?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
   const links = useMemo(() => {
@@ -72,6 +75,7 @@ export function AnswerCard({
           {processed}
         </ReactMarkdown>
       </div>
+      {mermaid && <MermaidPanel code={mermaid} />}
     </article>
   );
 }

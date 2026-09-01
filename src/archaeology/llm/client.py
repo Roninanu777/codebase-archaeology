@@ -54,7 +54,7 @@ def api_key() -> str:
 def chat_completion(
     messages: list[dict[str, str]],
     model: str | None = None,
-    max_tokens: int = 1200,
+    max_tokens: int = 3000,
     temperature: float = 0.2,
     poster: Poster | None = None,
 ) -> Completion:

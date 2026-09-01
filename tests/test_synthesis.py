@@ -138,3 +138,31 @@ def test_router_sends_symbols_and_prose_down_different_paths() -> None:
     assert looks_like_symbol("React.memo") is True
     assert looks_like_symbol("can you tell me how does the reconciler work?") is False
     assert looks_like_symbol("why lanes") is False
+
+
+def test_mermaid_block_extracted_and_stripped(
+    synthetic_js_repo: SyntheticRepo, tmp_path: Path
+) -> None:
+    engine = _setup(synthetic_js_repo, tmp_path)
+    from archaeology.routes.path_a import why_symbol
+
+    path_a = why_symbol(engine, "t/js", "calc", rel_path="src/calc.js")
+    assert path_a.introduced is not None
+    real_sha = path_a.introduced.sha
+    canned = (
+        f"calc adds numbers [{real_sha}].\n\n"
+        f"```mermaid\nflowchart TD\n  A[{real_sha}] --> B[calc]\n```\n"
+    )
+    result = synthesize_why(
+        engine,
+        "t/js",
+        "calc",
+        file="src/calc.js",
+        model="test/model",
+        poster=_fake_poster(canned),
+    )
+    assert result.status == "answered"
+    assert "```" not in (result.answer or "")
+    assert result.mermaid is not None
+    assert result.mermaid.startswith("flowchart TD")
+    assert real_sha in result.citations

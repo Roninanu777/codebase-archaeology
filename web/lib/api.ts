@@ -67,6 +67,7 @@ export interface AnswerResult {
   abstained_reason: string | null;
   citations: string[];
   model: string | null;
+  mermaid?: string | null;
   hits?: SearchHit[] | null;
   index_status: IndexStatus | null;
 }

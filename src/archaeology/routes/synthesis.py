@@ -35,7 +35,25 @@ Rules:
 - Present the arc chronologically when decisions changed over time.
 - If the evidence does not contain the reasoning, reply with exactly one line:
   INSUFFICIENT_EVIDENCE: <what is missing>
-- Never invent rationale. Never use knowledge outside the evidence bundle."""
+- Never invent rationale. Never use knowledge outside the evidence bundle.
+- You may append ONE fenced ```mermaid flowchart visualizing the arc
+  (flowchart TD or LR). Every node label must include its evidence id in
+  brackets, and every claim in node labels must come from the evidence.
+  Omit the diagram entirely if it adds nothing."""
+
+
+_MERMAID_RE = re.compile(r"```mermaid\n(.*?)```", re.DOTALL)
+
+
+def _extract_mermaid(text: str) -> tuple[str, str | None]:
+    match = _MERMAID_RE.search(text)
+    if match is None:
+        return text, None
+    diagram = match.group(1).strip()
+    if not diagram:
+        return text, None
+    stripped = (text[: match.start()] + text[match.end() :]).strip()
+    return stripped, diagram
 
 
 @dataclass(slots=True)
@@ -47,6 +65,7 @@ class SynthesisResult:
     abstained_reason: str | None = None
     citations: list[str] = field(default_factory=list)
     model: str | None = None
+    mermaid: str | None = None
 
 
 def render_evidence(result: PathAResult) -> str:
@@ -194,17 +213,19 @@ def synthesize_why(
             model=completion.model,
         )
 
+    answer_text, mermaid = _extract_mermaid(completion.content)
     citable = [ev.sha for ev in result.timeline] + [
         label for label in discussion_labels if not label.startswith("PR #")
     ]
-    citations = [sha for sha in citable if f"[{sha}" in completion.content]
+    citations = [sha for sha in citable if f"[{sha}" in answer_text]
     return SynthesisResult(
         status="answered",
         symbol=symbol,
         repo=repo_name,
-        answer=completion.content,
+        answer=answer_text,
         citations=citations,
         model=completion.model,
+        mermaid=mermaid,
     )
 
 
@@ -349,20 +370,22 @@ def synthesize_question(
             search_result,
         )
 
+    answer_text, mermaid = _extract_mermaid(completion.content)
     hit_ids = [h.sha for h in search_result.hits]
-    citations = [sid for sid in hit_ids if f"[{sid}" in completion.content]
+    citations = [sid for sid in hit_ids if f"[{sid}" in answer_text]
     if not citations:
         pr_in_hits = {int(h.sha[3:]) for h in search_result.hits if h.sha.startswith("pr:")}
-        mentioned = {int(m) for m in re.findall(r"#(\d{2,6})", completion.content)}
+        mentioned = {int(m) for m in re.findall(r"#(\d{2,6})", answer_text)}
         citations = [f"pr:{n}" for n in sorted(mentioned & pr_in_hits)]
     return (
         SynthesisResult(
             status="answered",
             symbol=question,
             repo=repo_label,
-            answer=completion.content,
+            answer=answer_text,
             citations=citations,
             model=completion.model,
+            mermaid=mermaid,
         ),
         search_result,
     )
