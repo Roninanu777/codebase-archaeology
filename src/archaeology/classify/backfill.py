@@ -8,7 +8,11 @@ import pygit2
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from archaeology.classify.ast_layer import AST_EXTRACTOR_VERSION, commit_ast_feature
+from archaeology.classify.ast_layer import (
+    AST_EXTRACTOR_VERSION,
+    AstVerdict,
+    commit_ast_feature,
+)
 from archaeology.classify.features import ChangeFeatures, make_diff
 from archaeology.classify.labels import RULE_VERSION_AST_JS_V1, label_from_features_v2
 from archaeology.storage.models import Commit, CommitFeature, CommitSignificance, Repo
@@ -89,8 +93,11 @@ def backfill_ast_features(
 
         for count, (feature_row, sha) in enumerate(pending, start=1):
             commit_obj = git_repo[sha]
-            diff = make_diff(git_repo, commit_obj)
-            verdict = commit_ast_feature(git_repo, diff)
+            try:
+                diff = make_diff(git_repo, commit_obj)
+                verdict = commit_ast_feature(git_repo, diff)
+            except Exception:
+                verdict = AstVerdict(applicable=False, format_only=False, files_judged=0)
             features = _features_from_row(feature_row)
             new_label = label_from_features_v2(
                 features, verdict.format_only if verdict.applicable else None

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
@@ -118,6 +119,27 @@ def _cmd_answer(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_index_remote(args: argparse.Namespace) -> int:
+    from archaeology.jobs import runner
+
+    engine = create_engine(args.database_url or DATABASE_URL)
+    handle = runner.enqueue_index(engine, args.repo)
+    print(f"job {handle['job_id']} queued for {args.repo}")
+    last_stage: str | None = None
+    while True:
+        status = runner.job_status(engine, handle["job_id"]) or {}
+        stage = status.get("stage")
+        if stage != last_stage:
+            print(f"  stage={stage} {status.get('detail') or ''}")
+            last_stage = stage
+        if status.get("status") == "done":
+            return 0
+        if status.get("status") == "failed":
+            print(f"FAILED: {status.get('error')}")
+            return 1
+        time.sleep(2.0)
+
+
 def _render_why(result: PathAResult) -> None:
     if result.status == "abstained":
         print(f"ABSTAINED ({result.reason}): no reliable answer for '{result.symbol}'")
@@ -211,6 +233,11 @@ def main(argv: list[str] | None = None) -> int:
     p_ans.add_argument("--file", default=None)
     p_ans.add_argument("--database-url", default=None)
     p_ans.set_defaults(func=_cmd_answer)
+
+    p_ir = subparsers.add_parser("index-remote", help="clone + fully index a public GitHub repo")
+    p_ir.add_argument("repo", help="owner/repo on github.com")
+    p_ir.add_argument("--database-url", default=None)
+    p_ir.set_defaults(func=_cmd_index_remote)
 
     args = parser.parse_args(argv)
     return int(args.func(args))

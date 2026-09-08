@@ -106,8 +106,8 @@ def commit_ast_feature(repo: Any, diff: Any) -> AstVerdict:
     applicable = False
     format_only = True
     judged = 0
-    for patch in diff:
-        delta = patch.delta
+    deltas = list(diff.deltas)
+    for idx, delta in enumerate(deltas):
         status = int(delta.status)
         if status not in _ELIGIBLE_STATUSES:
             continue
@@ -115,7 +115,14 @@ def commit_ast_feature(repo: Any, diff: Any) -> AstVerdict:
         if not path or os.path.splitext(path)[1].lower() not in _CODE_SUFFIXES:
             continue
         applicable = True
-        verdict = file_is_format_only(repo, delta.old_file.id, delta.new_file.id, path)
+        try:
+            patch = diff[idx]
+            if patch is None or patch.text is None:
+                verdict = None
+            else:
+                verdict = file_is_format_only(repo, delta.old_file.id, delta.new_file.id, path)
+        except Exception:
+            verdict = None
         if verdict is None or verdict is False:
             format_only = False
             break

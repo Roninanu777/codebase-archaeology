@@ -2,6 +2,7 @@
 
 import type { IndexStatus } from "@/lib/api";
 import { Spinner } from "@/components/ui";
+import { AddRepoFlow } from "@/components/AddRepoFlow";
 
 export type Mode = "auto" | "symbol" | "search";
 
@@ -16,6 +17,7 @@ export function QueryBar({
   repos,
   repo,
   onRepoChange,
+  onReposChanged,
   query,
   onQueryChange,
   mode,
@@ -27,6 +29,7 @@ export function QueryBar({
   repos: IndexStatus[];
   repo: string;
   onRepoChange: (r: string) => void;
+  onReposChanged: (repos: IndexStatus[]) => void;
   query: string;
   onQueryChange: (q: string) => void;
   mode: Mode;
@@ -51,6 +54,7 @@ export function QueryBar({
           ))}
           {repos.length === 0 && <option>no indexed repos</option>}
         </select>
+        <AddRepoFlow onAdded={onReposChanged} />
         <input
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}

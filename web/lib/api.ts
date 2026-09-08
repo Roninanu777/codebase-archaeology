@@ -99,6 +99,35 @@ export function listRepos(): Promise<IndexStatus[]> {
   return getJson<IndexStatus[]>("/repos");
 }
 
+export function indexRemote(
+  repo: string
+): Promise<{ job_id: number; run_key: string; status: string }> {
+  return fetch(`${API_BASE}/repos/index-remote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail ?? `API ${res.status}`);
+    }
+    return res.json();
+  });
+}
+
+export interface JobStatus {
+  job_id: number;
+  run_key: string;
+  status: string;
+  stage?: string | null;
+  detail?: string | null;
+  error?: string | null;
+}
+
+export function jobStatus(jobId: number): Promise<JobStatus> {
+  return getJson<JobStatus>(`/jobs/${jobId}`);
+}
+
 export function why(repo: string, symbol: string): Promise<WhyResult> {
   return getJson<WhyResult>(
     `/repos/${encodeURIComponent(repo)}/why/${encodeURIComponent(symbol)}`

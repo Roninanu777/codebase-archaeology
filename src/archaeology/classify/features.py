@@ -84,8 +84,8 @@ def extract_features(diff: Any) -> ChangeFeatures:
     saw_nonblank_change = False
     all_patches_commentish = True
 
-    for patch in _iter_patches(diff):
-        delta = patch.delta
+    deltas = list(diff.deltas)
+    for idx, delta in enumerate(deltas):
         out.files_changed += 1
         status = int(delta.status)
 
@@ -99,15 +99,20 @@ def extract_features(diff: Any) -> ChangeFeatures:
         if renamed:
             out.renamed_files += 1
 
-        is_binary = bool(getattr(delta, "flags", 0) & int(pygit2.enums.DiffFlag.BINARY))
-        if patch.text is None or is_binary:
+        try:
+            patch = diff[idx]
+            patch_text = patch.text if patch is not None else None
+        except Exception:
+            patch_text = None
+
+        if patch_text is None:
             out.binary_files += 1
             saw_text_change = True
             all_patches_commentish = False
-            out.per_file.append(FileDelta(display_path, "binary", None, 0, 0))
+            out.per_file.append(FileDelta(display_path, "unreadable", None, 0, 0))
             continue
 
-        removed, added = _split_patch_lines(patch.text)
+        removed, added = _split_patch_lines(patch_text)
         out.additions += len(added)
         out.deletions += len(removed)
         total_removed.extend(removed)

@@ -22,6 +22,11 @@ from archaeology.routes.synthesis import answer_any, synthesize_why
 from archaeology.storage.status import repo_status
 
 
+class AnswerRequest(BaseModel):
+    query: str
+    file: str | None = None
+
+
 class IndexRequest(BaseModel):
     path: str
     name: str
@@ -29,9 +34,8 @@ class IndexRequest(BaseModel):
     classify: bool = True
 
 
-class AnswerRequest(BaseModel):
-    query: str
-    file: str | None = None
+class IndexRemoteRequest(BaseModel):
+    repo: str
 
 
 def _engine(url: str | None = None) -> Any:
@@ -98,6 +102,25 @@ def create_app(database_url: str | None = None) -> FastAPI:
             },
             "classification": classification,
         }
+
+    @app.post("/repos/index-remote")
+    def index_remote(body: IndexRemoteRequest) -> dict[str, Any]:
+        from archaeology.jobs import runner
+
+        try:
+            handle = runner.enqueue_index(engine, body.repo)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return handle
+
+    @app.get("/jobs/{job_id}")
+    def get_job(job_id: int) -> dict[str, Any]:
+        from archaeology.jobs import runner
+
+        status = runner.job_status(engine, job_id)
+        if status is None:
+            raise HTTPException(status_code=404, detail=f"unknown job {job_id}")
+        return status
 
     @app.get("/repos/{name:path}/status")
     def get_status(name: str) -> dict[str, Any]:

@@ -8,6 +8,7 @@ from typing import Any
 
 import pygit2
 import pygit2.enums
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,7 @@ class IngestStats:
     file_changes: int = 0
     skipped: bool = False
     duration_s: float = 0.0
+    degraded: int = 0
     label_counts: dict[str, int] = field(default_factory=dict)
 
 
@@ -93,6 +95,8 @@ def ingest_repository(
             repo.head.target,
             int(pygit2.enums.SortMode.TOPOLOGICAL) | int(pygit2.enums.SortMode.REVERSE),
         )
+
+        degraded_count = 0
 
         commit_rows: list[dict[str, Any]] = []
         parent_rows: list[dict[str, Any]] = []
@@ -165,8 +169,14 @@ def ingest_repository(
                     }
                 )
 
-            diff = make_diff(repo, commit)
-            features = extract_features(diff)
+            degraded_this = False
+            try:
+                diff = make_diff(repo, commit)
+                features = extract_features(diff)
+            except Exception:
+                features = ChangeFeatures(files_changed=0)
+                degraded_count += 1
+                degraded_this = True
 
             for seq, fd in enumerate(features.per_file):
                 change_rows.append(
@@ -181,7 +191,10 @@ def ingest_repository(
                         "deletions": fd.deletions,
                     }
                 )
-            feature_rows.append(_feature_row(repo_id, sha, features))
+            _fr = _feature_row(repo_id, sha, features)
+            if degraded_this:
+                _fr["extractor_version"] = FEATURE_EXTRACTOR_VERSION + "+degraded"
+            feature_rows.append(_fr)
             significance_rows.append(
                 {
                     "repo_id": repo_id,
@@ -197,6 +210,7 @@ def ingest_repository(
                 progress(f"  ingested {count} commits")
 
         flush()
+        stats.degraded = degraded_count
         db_repo.indexed_through_sha = head
         session.commit()
 
@@ -218,6 +232,90 @@ def _feature_row(repo_id: int, sha: str, features: ChangeFeatures) -> dict[str, 
         "pure_rename": features.pure_rename,
         "extractor_version": FEATURE_EXTRACTOR_VERSION,
     }
+
+
+def recompute_degraded_features(engine: Any, repo_name: str) -> tuple[int, int]:
+    with Session(engine) as session:
+        repo_row = session.scalars(select(Repo).where(Repo.name == repo_name)).first()
+        if repo_row is None:
+            return 0, 0
+        repo_id = int(repo_row.id)
+        local = repo_row.local_path
+        if not local:
+            return 0, 0
+        degraded_shas = session.scalars(
+            select(CommitFeature.sha).where(
+                CommitFeature.repo_id == repo_id,
+                CommitFeature.extractor_version.like("%+degraded"),
+            )
+        ).all()
+        if not degraded_shas:
+            return 0, 0
+        session.execute(
+            sa_delete(CommitFeature).where(
+                CommitFeature.repo_id == repo_id,
+                CommitFeature.sha.in_(degraded_shas),
+            )
+        )
+        session.execute(
+            sa_delete(CommitSignificance).where(
+                CommitSignificance.repo_id == repo_id,
+                CommitSignificance.sha.in_(degraded_shas),
+            )
+        )
+        session.execute(
+            sa_delete(FileChange).where(
+                FileChange.repo_id == repo_id,
+                FileChange.sha.in_(degraded_shas),
+            )
+        )
+        session.commit()
+
+    repo = open_repository(local)
+    recomputed = 0
+    still_degraded = 0
+    with Session(engine) as session:
+        for i in range(0, len(degraded_shas), 200):
+            batch = degraded_shas[i : i + 200]
+            for sha in batch:
+                commit = repo[sha]
+                try:
+                    diff = make_diff(repo, commit)
+                    features = extract_features(diff)
+                except Exception:
+                    features = ChangeFeatures(files_changed=0)
+                    still_degraded += 1
+                session.execute(insert(CommitFeature), [_feature_row(repo_id, sha, features)])
+                session.execute(
+                    insert(CommitSignificance),
+                    [
+                        {
+                            "repo_id": repo_id,
+                            "sha": sha,
+                            "label": label_from_features(features),
+                            "rule_version": RULE_VERSION_FLOOR_V1,
+                        }
+                    ],
+                )
+                for seq, fd in enumerate(features.per_file):
+                    session.execute(
+                        insert(FileChange),
+                        [
+                            {
+                                "repo_id": repo_id,
+                                "sha": sha,
+                                "seq": seq,
+                                "status": fd.status,
+                                "path": fd.path,
+                                "old_path": fd.old_path,
+                                "additions": fd.additions,
+                                "deletions": fd.deletions,
+                            }
+                        ],
+                    )
+                recomputed += 1
+            session.commit()
+    return recomputed, still_degraded
 
 
 def create_all(engine: Any) -> None:

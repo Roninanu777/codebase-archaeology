@@ -165,6 +165,10 @@ export default function Home() {
         repos={repos}
         repo={repo}
         onRepoChange={setRepo}
+        onReposChanged={(rs) => {
+          setRepos(rs);
+          if (rs.length > 0 && !rs.find((r) => r.name === repo)) setRepo(rs[0].name);
+        }}
         query={query}
         onQueryChange={setQuery}
         mode={mode}
