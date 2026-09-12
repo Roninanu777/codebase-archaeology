@@ -17,6 +17,16 @@ def _load_job(session: Session, run_key: str) -> Job | None:
     return session.scalars(select(Job).where(Job.run_key == run_key)).first()
 
 
+def github_available() -> bool:
+    from archaeology.ingest.github import resolve_github_token
+
+    try:
+        resolve_github_token()
+        return True
+    except RuntimeError:
+        return False
+
+
 def enqueue_index(engine: Any, slug: str) -> dict[str, Any]:
     from archaeology.ingest.provision import validate_slug
 
@@ -109,8 +119,11 @@ def _execute(engine: Any, run_key: str, slug: str, clones_dir: Any, max_commit_c
         stage("significance", f"{stats.commits} commits")
         backfill_ast_features(engine, slug, progress=lambda _m: None)
 
-        stage("prs", None)
-        backfill_pull_requests(engine, slug, progress=lambda _m: None)
+        if github_available():
+            stage("prs", None)
+            backfill_pull_requests(engine, slug, progress=lambda _m: None)
+        else:
+            stage("prs", "skipped (no GITHUB_TOKEN)")
 
         stage("embedding", None)
         emb = embed_repo(engine, slug, progress=lambda _m: None)

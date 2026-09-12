@@ -104,3 +104,16 @@ def test_halfvec_sql_switch() -> None:
 
     sparse = str(build_sparse_sql())
     assert "d.tsv @@ q" in sparse
+
+
+def test_github_available_reflects_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    from archaeology.jobs import runner
+
+    monkeypatch.setattr(
+        "archaeology.ingest.github.resolve_github_token",
+        lambda: (_ for _ in ()).throw(RuntimeError("no token")),
+    )
+    assert runner.github_available() is False
+
+    monkeypatch.setattr("archaeology.ingest.github.resolve_github_token", lambda: "tok")
+    assert runner.github_available() is True
