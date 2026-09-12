@@ -77,6 +77,15 @@ def gh_cli_token() -> str:
     return token
 
 
+def resolve_github_token() -> str:
+    import os
+
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    if token:
+        return token
+    return gh_cli_token()
+
+
 def graphql_post(token: str) -> Poster:
     def post(query: str, variables: dict[str, Any]) -> dict[str, Any]:
         response = httpx.post(

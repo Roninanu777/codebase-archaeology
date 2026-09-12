@@ -1,6 +1,20 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+export const TOKEN_STORAGE_KEY = "archaeology_token";
+
+export function getSynthesisToken(): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
+}
+
+function gatedHeaders(): Record<string, string> {
+  const token = getSynthesisToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["X-Archaeology-Token"] = token;
+  return headers;
+}
+
 export interface IndexStatus {
   name: string;
   head_sha?: string | null;
@@ -75,7 +89,7 @@ export interface AnswerResult {
 export function answerRouted(repo: string, query: string): Promise<AnswerResult> {
   return fetch(`${API_BASE}/repos/${encodeURIComponent(repo)}/answer`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: gatedHeaders(),
     body: JSON.stringify({ query }),
   }).then(async (res) => {
     if (!res.ok) {
@@ -104,7 +118,7 @@ export function indexRemote(
 ): Promise<{ job_id: number; run_key: string; status: string }> {
   return fetch(`${API_BASE}/repos/index-remote`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: gatedHeaders(),
     body: JSON.stringify({ repo }),
   }).then(async (res) => {
     if (!res.ok) {

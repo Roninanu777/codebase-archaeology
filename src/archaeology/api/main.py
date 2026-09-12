@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from dataclasses import asdict, is_dataclass
 from typing import Any, cast
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from archaeology.api.auth import require_synthesis_token
 from archaeology.classify.backfill import backfill_ast_features
 from archaeology.config import DATABASE_URL
 from archaeology.ingest.git import ingest_repository
@@ -20,6 +22,8 @@ from archaeology.retrieval.search import hybrid_search
 from archaeology.routes.path_a import why_symbol
 from archaeology.routes.synthesis import answer_any, synthesize_why
 from archaeology.storage.status import repo_status
+
+DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
 
 
 class AnswerRequest(BaseModel):
@@ -51,13 +55,27 @@ def _payload(obj: Any) -> dict[str, Any]:
 
 
 def create_app(database_url: str | None = None) -> FastAPI:
-    app = FastAPI(title="Codebase Archaeology", version="0.2.0")
+    from contextlib import asynccontextmanager
+
+    from archaeology.mcp.server import mcp as mcp_server
+
+    mcp_http_app = mcp_server.streamable_http_app(streamable_http_path="/", stateless_http=True)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> Any:
+        async with mcp_server.session_manager.run():
+            yield
+
+    app = FastAPI(title="Codebase Archaeology", version="0.2.0", lifespan=lifespan)
+    app.mount("/mcp", mcp_http_app)
+    origins = [
+        o.strip()
+        for o in os.environ.get("ARCHAEOLOGY_CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
+        if o.strip()
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-        ],
+        allow_origins=origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -78,7 +96,9 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return [repo_status(session, name) or {"name": name} for name in names]
 
     @app.post("/repos/index")
-    def index_repo(request: IndexRequest) -> dict[str, Any]:
+    def index_repo(
+        request: IndexRequest, _auth: None = Depends(require_synthesis_token)
+    ) -> dict[str, Any]:
         try:
             stats = ingest_repository(engine, request.path, name=request.name, url=request.url)
             classification: dict[str, Any] | None = None
@@ -104,7 +124,9 @@ def create_app(database_url: str | None = None) -> FastAPI:
         }
 
     @app.post("/repos/index-remote")
-    def index_remote(body: IndexRemoteRequest) -> dict[str, Any]:
+    def index_remote(
+        body: IndexRemoteRequest, _auth: None = Depends(require_synthesis_token)
+    ) -> dict[str, Any]:
         from archaeology.jobs import runner
 
         try:
@@ -148,7 +170,9 @@ def create_app(database_url: str | None = None) -> FastAPI:
         return _payload(result)
 
     @app.post("/repos/{name:path}/answer")
-    def post_answer(name: str, body: AnswerRequest) -> dict[str, Any]:
+    def post_answer(
+        name: str, body: AnswerRequest, _auth: None = Depends(require_synthesis_token)
+    ) -> dict[str, Any]:
         try:
             routed = answer_any(
                 engine,

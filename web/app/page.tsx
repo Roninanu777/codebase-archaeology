@@ -16,6 +16,7 @@ import { EvidenceArc, type ArcPoint } from "@/components/Diagram";
 import { HitList } from "@/components/HitList";
 import { MermaidPanel } from "@/components/MermaidPanel";
 import { QueryBar, type Mode } from "@/components/QueryBar";
+import { SettingsButton } from "@/components/Settings";
 import { Timeline } from "@/components/Timeline";
 import { ErrorPanel, InfoPanel, Skeleton } from "@/components/ui";
 
@@ -151,7 +152,7 @@ export default function Home() {
             <path d="M25.5 13 L28.5 16" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </span>
-        <div>
+        <div className="flex-1">
           <h1 className="text-[15px] font-semibold tracking-tight text-zinc-100">
             Codebase Archaeology
           </h1>
@@ -159,6 +160,7 @@ export default function Home() {
             Why does this code exist? Every claim traced to a commit or discussion.
           </p>
         </div>
+        <SettingsButton />
       </header>
 
       <QueryBar

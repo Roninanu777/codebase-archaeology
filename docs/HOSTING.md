@@ -100,7 +100,7 @@ SELECT count(*) FROM commits;                                        -- 50,316
 | 1 | **Token gate**: `SYNTHESIS_TOKEN` env; `X-Archaeology-Token` header required on `/answer`, `/repos/index-remote`, `/repos/index` when set; 403 otherwise. Unset ⇒ open (local dev unchanged). | `api/auth.py`, `api/main.py` | read endpoints stay public |
 | 2 | **CORS from env**: `ARCHAEOLOGY_CORS_ORIGINS` comma list, default localhost pair; add Pages domain at deploy. | `api/main.py` | |
 | 3 | **MCP over HTTP**: mount `mcp.streamable_http_app()` at `/mcp` on the FastAPI app. | `api/main.py`, `mcp/server.py` | read-only tools; no auth v1 |
-| 4 | **halfvec switch**: `ARCHAEOLOGY_HALFVEC=1` swaps the dense cast to `halfvec` and the sparse predicate to the title‖body expression. Default off (local vector schema unchanged). | `retrieval/search.py` | one helper, two SQL strings |
+| 4 | **halfvec switch**: `ARCHAEOLOGY_HALFVEC=1` swaps the dense cast to `halfvec` (sparse always uses the indexed `tsv` column). Default off (local vector schema unchanged). | `retrieval/search.py` | `build_dense_sql`/`build_sparse_sql` |
 | 5 | **GitHub token resolution**: `GITHUB_TOKEN` env first, `gh` CLI fallback. | `ingest/github.py` | needed in-container; PAT with public-repo read |
 | 6 | **Static export**: `output: "export"`, API base from `NEXT_PUBLIC_API_BASE`; settings popover for the synthesis token (localStorage) injected as header. | `web/next.config.ts`, `lib/api.ts`, `components/Settings.tsx` | verified all components are client-side |
 | 7 | **HF boot script**: alembic upgrade (no-op on restored DB), then background re-clone of every repo in `repos` (skips present), then uvicorn. Health is up immediately; Path A lights up as clones land (`index_status.local_path_present` already surfaces this). | `scripts/hf_boot.sh`, `Dockerfile` | idempotent; tolerant of cold starts |
@@ -235,7 +235,26 @@ Nothing else is billable; all three tiers are $0 for this workload.
 | Project paused / Space slept | medium | daily keepalive cron (§5.8) |
 | halfvec code path diverges from local | medium | pg-gated test matrix runs both (`ARCHAEOLOGY_HALFVEC` ∈ {unset,1}) |
 
-## 13. Phases
+## 13. P0 record (completed)
+
+P0 scaffolding is built, CI-green, and locally verified:
+
+| Item | Verification |
+|---|---|
+| Token gate | 403 without / 200 with `X-Archaeology-Token`; read paths open (`test_hosting.py`) |
+| MCP streamable-http | mounted at `/mcp` (307 redirect to `/mcp/`), session manager in app lifespan |
+| halfvec switch | `build_dense_sql` cast switch unit-tested; slim copy measured at **433 MB** |
+| `GITHUB_TOKEN` | env-first resolution unit-tested |
+| Storage plan | `hosted_slim.sql` run against a real scratch copy: 87,816 chunks, 50,316 commits, 433 MB |
+| Docker image | builds in ~9 min; container smoke: migrations run, health, 7 repos listed, gated answer 403, retrieval via baked models in `HF_HUB_OFFLINE=1` |
+| Static export | `web/out` (5.5 MB) builds with `output: "export"` |
+| Scripts | `db_ship.sh`, `deploy_api.sh`, `deploy_web.sh`, `hf_boot.sh`, keepalive workflow |
+
+Two implementation corrections found during P0 (both reflected above):
+Dockerfile needed `--no-install-project` before `COPY src` and the offline envs
+after the model bake; the `tsv` column stays (ORM coupling).
+
+## 13b. Phases
 
 - **P0 — local-verifiable scaffolding** (no accounts): token gate + tests,
   CORS env, MCP mount, halfvec switch + pg-gated tests, static export,

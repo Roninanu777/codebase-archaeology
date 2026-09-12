@@ -1,0 +1,22 @@
+name: keepalive
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warm the hosted API (HF Space sleep + Supabase idle pause)
+        run: |
+          URL="${{ vars.HOSTED_API_URL }}"
+          if [ -z "$URL" ]; then
+            echo "HOSTED_API_URL repo variable not set; nothing to ping"
+            exit 0
+          fi
+          set -x
+          curl -fsS --max-time 120 "$URL/healthz"
+          curl -fsS --max-time 180 "$URL/repos" > /dev/null
+          echo "hosted stack is warm"

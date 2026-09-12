@@ -57,6 +57,29 @@ def rrf_fuse(rank_lists: list[list[int]], k: int = RRF_K) -> dict[int, float]:
     return scores
 
 
+def halfvec_mode() -> bool:
+    import os
+
+    return os.environ.get("ARCHAEOLOGY_HALFVEC", "") == "1"
+
+
+def build_dense_sql(halfvec: bool | None = None) -> Any:
+    cast = "halfvec" if (halfvec_mode() if halfvec is None else halfvec) else "vector"
+    return sql_text(
+        "SELECT id FROM discussion_chunks "
+        "WHERE repo_id IN :repos AND embedding IS NOT NULL "
+        f"ORDER BY embedding <=> CAST(:v AS {cast}) LIMIT :k"
+    )
+
+
+def build_sparse_sql(halfvec: bool | None = None) -> Any:
+    return sql_text(
+        "SELECT id FROM discussion_chunks d, websearch_to_tsquery('english', :q) q "
+        "WHERE d.repo_id IN :repos AND d.tsv @@ q "
+        "ORDER BY ts_rank_cd(d.tsv, q) DESC LIMIT :k"
+    )
+
+
 def _repo_ids(session: Session, repo_names: list[str]) -> list[int]:
     ids: list[int] = []
     for name in repo_names:
@@ -88,16 +111,8 @@ def hybrid_search(
     qvec = embedder.encode([QUERY_PREFIX + query])[0]
     vec_literal = "[" + ",".join(f"{x:.6f}" for x in qvec) + "]"
 
-    dense_sql = sql_text(
-        "SELECT id FROM discussion_chunks "
-        "WHERE repo_id IN :repos AND embedding IS NOT NULL "
-        "ORDER BY embedding <=> CAST(:v AS vector) LIMIT :k"
-    )
-    sparse_sql = sql_text(
-        "SELECT id FROM discussion_chunks d, websearch_to_tsquery('english', :q) q "
-        "WHERE d.repo_id IN :repos AND d.tsv @@ q "
-        "ORDER BY ts_rank_cd(d.tsv, q) DESC LIMIT :k"
-    )
+    dense_sql = build_dense_sql()
+    sparse_sql = build_sparse_sql()
 
     from sqlalchemy import bindparam
 

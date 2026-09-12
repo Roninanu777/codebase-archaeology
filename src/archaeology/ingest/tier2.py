@@ -14,9 +14,9 @@ from archaeology.ingest.github import (
     PAGE_SIZE,
     PRS_QUERY,
     PrPage,
-    gh_cli_token,
     graphql_post,
     parse_pr_page,
+    resolve_github_token,
     store_pr_page,
 )
 from archaeology.storage.models import Job, Repo
@@ -55,7 +55,7 @@ def backfill_pull_requests(
     if not name:
         raise ValueError(f"repo name must be 'owner/repo', got {repo_name!r}")
 
-    post = poster or graphql_post(gh_cli_token())
+    post = poster or graphql_post(resolve_github_token())
     run_key = f"tier2:{repo_name}"
 
     with Session(engine) as session:
