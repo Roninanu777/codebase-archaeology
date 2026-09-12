@@ -11,6 +11,9 @@ echo "== ensuring pgvector on target"
 docker exec -i "$CONTAINER" psql "$TARGET" -v ON_ERROR_STOP=1 \
   -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
+# NOTE: use the Supabase *session pooler* URI (IPv4, session semantics).
+# Direct db.<ref>.supabase.co connections are IPv6-only on new projects.
+
 echo "== building slim scratch copy ($SHIP)"
 docker exec -i "$CONTAINER" psql -U archaeology -d postgres -v ON_ERROR_STOP=1 \
   -c "DROP DATABASE IF EXISTS $SHIP;" -c "CREATE DATABASE $SHIP;"
@@ -32,7 +35,7 @@ fi
 
 echo "== restoring to target"
 docker exec -i "$CONTAINER" bash -c \
-  "pg_dump -U archaeology --no-owner --no-acl $SHIP | psql -q $TARGET"
+  "pg_dump -U archaeology --no-owner --no-acl --if-exists $SHIP | psql -q $TARGET"
 
 echo "== target verification"
 docker exec -i "$CONTAINER" psql "$TARGET" -t -A \
