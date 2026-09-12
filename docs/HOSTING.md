@@ -245,7 +245,9 @@ P0 scaffolding is built, CI-green, and locally verified:
 | MCP streamable-http | mounted at `/mcp` (307 redirect to `/mcp/`), session manager in app lifespan |
 | halfvec switch | `build_dense_sql` cast switch unit-tested; slim copy measured at **433 MB** |
 | `GITHUB_TOKEN` | env-first resolution unit-tested |
-| Storage plan | `hosted_slim.sql` run against a real scratch copy: 87,816 chunks, 50,316 commits, 433 MB |
+| Storage plan | `hosted_slim.sql` run against a real scratch copy: 87,816 chunks, 50,316 commits, 433–435 MB |
+| **Ship path (end-to-end)** | `db_ship.sh` against a real second database: slim → dump → restore → **431 MB / 87,816 chunks / 50,316 commits**, 3m41s |
+| **Hosted query path** | retrieval against the restored halfvec schema (`ARCHAEOLOGY_HALFVEC=1`): dense+sparse ranks populated, cross-repo top hit = the verified `80d9a4011` ground truth |
 | Docker image | builds in ~9 min; container smoke: migrations run, health, 7 repos listed, gated answer 403, retrieval via baked models in `HF_HUB_OFFLINE=1` |
 | Static export | `web/out` (5.5 MB) builds with `output: "export"` |
 | Scripts | `db_ship.sh`, `deploy_api.sh`, `deploy_web.sh`, `hf_boot.sh`, keepalive workflow |

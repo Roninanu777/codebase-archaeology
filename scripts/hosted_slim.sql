@@ -11,7 +11,9 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- index rebuilds on the slim copy are heavy; Supabase sessions may be capped
+-- serial build: parallel HNSW workers exhaust small /dev/shm (containers)
 SET maintenance_work_mem = '512MB';
+SET max_parallel_maintenance_workers = 0;
 SET statement_timeout = 0;
 
 -- 1. drop test repos entirely

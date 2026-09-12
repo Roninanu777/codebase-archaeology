@@ -7,6 +7,12 @@ TARGET=${1:?usage: db_ship.sh <target-postgres-uri>}
 CONTAINER=${ARCHAEOLOGY_DB_CONTAINER:-app-db-1}
 SHIP=archaeology_ship
 
+echo "== preflight: target reachable"
+if ! docker exec -i "$CONTAINER" psql "$TARGET" -c "SELECT 1" >/dev/null 2>&1; then
+  echo "ERROR: cannot connect to target (does the database exist? is the pooler URI right?)"
+  exit 1
+fi
+
 echo "== ensuring pgvector on target"
 docker exec -i "$CONTAINER" psql "$TARGET" -v ON_ERROR_STOP=1 \
   -c "CREATE EXTENSION IF NOT EXISTS vector;"
@@ -35,7 +41,7 @@ fi
 
 echo "== restoring to target"
 docker exec -i "$CONTAINER" bash -c \
-  "pg_dump -U archaeology --no-owner --no-acl --if-exists $SHIP | psql -q $TARGET"
+  "pg_dump -U archaeology --no-owner --no-acl --clean --if-exists $SHIP | psql -q $TARGET"
 
 echo "== target verification"
 docker exec -i "$CONTAINER" psql "$TARGET" -t -A \
