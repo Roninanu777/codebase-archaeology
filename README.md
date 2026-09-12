@@ -54,6 +54,12 @@ Every answer carries an `index_status` footer so partial indexes are visible.
 MCP tools: `why_does_this_exist`, `history_of_symbol`, `search_decisions`.
 Point any MCP client at the stdio server; both surfaces wrap the same core.
 
+## Hosting
+
+A $0/month deployment (HF Space + Cloudflare Pages + Supabase) is specified in
+[docs/HOSTING.md](docs/HOSTING.md), including the storage-budget plan that fits
+the 144k-chunk corpus into Supabase's free 500 MB tier.
+
 ## LLM synthesis (optional)
 
 ```sh
