@@ -94,7 +94,7 @@ def _warmup() -> None:
     cpu=2.0,
     memory=4096,
     timeout=600,
-    scaledown_window=300,
+    scaledown_window=900,
     max_containers=1,
 )
 class Web:

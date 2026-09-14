@@ -8,6 +8,40 @@ export function getSynthesisToken(): string {
   return window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
 }
 
+let warmedAt = 0;
+
+export async function warmApi(maxWaitMs = 180_000): Promise<boolean> {
+  if (Date.now() - warmedAt < 120_000) return true;
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${API_BASE}/healthz`, { cache: "no-store" });
+      if (res.ok) {
+        warmedAt = Date.now();
+        return true;
+      }
+    } catch {
+      // cold-start admission redirects can surface as network errors here
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  return false;
+}
+
+async function fetchWithWarmRetry(
+  input: string,
+  init: RequestInit
+): Promise<Response> {
+  try {
+    const res = await fetch(input, init);
+    if (res.status === 303 || res.status === 0) throw new Error("cold");
+    return res;
+  } catch {
+    await warmApi();
+    return fetch(input, init);
+  }
+}
+
 function gatedHeaders(): Record<string, string> {
   const token = getSynthesisToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -86,8 +120,12 @@ export interface AnswerResult {
   index_status: IndexStatus | null;
 }
 
-export function answerRouted(repo: string, query: string): Promise<AnswerResult> {
-  return fetch(`${API_BASE}/repos/${encodeURIComponent(repo)}/answer`, {
+export async function answerRouted(
+  repo: string,
+  query: string
+): Promise<AnswerResult> {
+  await warmApi();
+  return fetchWithWarmRetry(`${API_BASE}/repos/${encodeURIComponent(repo)}/answer`, {
     method: "POST",
     headers: gatedHeaders(),
     body: JSON.stringify({ query }),
@@ -113,10 +151,11 @@ export function listRepos(): Promise<IndexStatus[]> {
   return getJson<IndexStatus[]>("/repos");
 }
 
-export function indexRemote(
+export async function indexRemote(
   repo: string
 ): Promise<{ job_id: number; run_key: string; status: string }> {
-  return fetch(`${API_BASE}/repos/index-remote`, {
+  await warmApi();
+  return fetchWithWarmRetry(`${API_BASE}/repos/index-remote`, {
     method: "POST",
     headers: gatedHeaders(),
     body: JSON.stringify({ repo }),

@@ -195,6 +195,9 @@ export default function Home() {
 
       {busy && !result && (
         <div className="mt-6 space-y-3">
+          <p className="text-[11px] text-zinc-600">
+            working… the hosted API wakes from sleep if it has been idle (~20s)
+          </p>
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-4/5" />
