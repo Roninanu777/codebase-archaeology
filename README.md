@@ -1,7 +1,10 @@
 # Codebase Archaeology
 
 Answers "why does this code exist" from git history, PR discussions, and linked issues — every
-claim cited to a commit or comment. See [docs/DESIGN.md](docs/DESIGN.md) for architecture
+claim cited to a commit or comment.
+
+**Live demo:** https://codebase-archaeology.pages.dev · API/MCP: https://ronirajkamalpradhan1112--codebase-archaeology-web-fastapi-app.modal.run
+(Explain and add-repo need the `X-Archaeology-Token`; Trace is open.) See [docs/DESIGN.md](docs/DESIGN.md) for architecture
 and [docs/CONTEXT.md](docs/CONTEXT.md) for the glossary.
 
 ## Layout

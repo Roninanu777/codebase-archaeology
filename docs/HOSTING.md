@@ -284,6 +284,20 @@ the image, so the runtime is identical to the locally smoke-tested container.
 | Secrets | Modal secret `archaeology-secrets` | DB URI, OpenRouter key, `SYNTHESIS_TOKEN` (generate once; never store in the repo), CORS origins, `ARCHAEOLOGY_HALFVEC=1`, `ARCHAEOLOGY_MCP_DNS_REBINDING=0` |
 | Keepalive | GitHub Actions cron | pings `/healthz` + `/repos` (keeps Supabase past its 7-day idle pause; Modal cold-starts are ~15 s) |
 
+### Live URLs and verification (2026-09-14)
+
+| URL | Serves |
+|---|---|
+| `https://codebase-archaeology.pages.dev` | web UI (Cloudflare Pages, static export) |
+| `https://ronirajkamalpradhan1112--codebase-archaeology-web-fastapi-app.modal.run` | REST + MCP (`/mcp`) on Modal |
+
+Verified against the hosted stack: 5 repos listed; cross-origin reads from the
+Pages origin (CORS preflight 200 + ACAO header); Path A answered (`memo` →
+`a0733fe13`); cross-repo retrieval returning the `80d9a4011` ground truth;
+403 without token and a **cited deepseek answer (8 citations) with the token**;
+MCP `initialize` + `tools/list` over the public URL. Cold start ≈ 15 s,
+warm ≈ 1 s.
+
 ### Findings worth keeping
 
 1. **psycopg scheme matters**: SQLAlchemy defaults `postgresql://` to psycopg2;
