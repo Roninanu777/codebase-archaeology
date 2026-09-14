@@ -26,7 +26,6 @@ COPY alembic.ini ./
 COPY scripts/hf_boot.sh ./scripts/hf_boot.sh
 RUN uv sync --frozen --no-dev
 
-RUN mkdir -p /data/clones
 ENV HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
     ARCHAEOLOGY_CLONES_DIR=/data/clones

@@ -14,6 +14,7 @@ from archaeology.classify.labels import (
     INSIGNIFICANT_WHITESPACE,
     SIGNIFICANT,
 )
+from archaeology.config import CLONES_DIR
 from archaeology.lineage.walker import cached_lineage
 from archaeology.storage.models import Commit, CommitSignificance, Repo
 from archaeology.symbols.resolver import SymbolSpan, resolve_in_repo, resolve_symbol
@@ -49,6 +50,23 @@ class PathAResult:
     timeline: list[CommitEvidence] = field(default_factory=list)
     noise_dropped: int = 0
     cache_hit: bool = False
+
+
+def resolve_clone_path(repo_name: str, local_path: str | None) -> str | None:
+    """Prefer the recorded path; fall back to CLONES_DIR/<basename>.
+
+    Shipped databases carry local_path values from the machine that indexed
+    them (e.g. a Mac path), which do not exist on a server. The fallback makes
+    the same database work wherever the clones were warmed.
+    """
+    from pathlib import Path
+
+    if local_path and Path(local_path).exists():
+        return local_path
+    candidate = CLONES_DIR / repo_name.split("/")[-1]
+    if candidate.exists():
+        return str(candidate)
+    return local_path
 
 
 def _abstain(repo_name: str, symbol: str, reason: str) -> PathAResult:
@@ -90,7 +108,7 @@ def why_symbol(
         if db_repo is None:
             return _abstain(repo_name, symbol, "unknown_repo")
 
-        repo_path = repo_path_override or db_repo.local_path
+        repo_path = repo_path_override or resolve_clone_path(repo_name, db_repo.local_path)
         if not repo_path:
             return _abstain(repo_name, symbol, "missing_local_clone")
 

@@ -24,6 +24,23 @@ from archaeology.routes.synthesis import answer_any, synthesize_why
 from archaeology.storage.status import repo_status
 
 DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
+BUILD_MARKER = "2026-09-14-mcp-allowlist-2"
+DEFAULT_MCP_ALLOWED_HOSTS = "localhost,127.0.0.1,localhost:*,127.0.0.1:*"
+
+
+def _csv_env(name: str, default: str) -> list[str]:
+    return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
+
+
+def mcp_transport_security() -> Any:
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    protection_on = os.environ.get("ARCHAEOLOGY_MCP_DNS_REBINDING", "1") != "0"
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=protection_on,
+        allowed_hosts=_csv_env("ARCHAEOLOGY_MCP_ALLOWED_HOSTS", DEFAULT_MCP_ALLOWED_HOSTS),
+        allowed_origins=_csv_env("ARCHAEOLOGY_MCP_ALLOWED_ORIGINS", ""),
+    )
 
 
 class AnswerRequest(BaseModel):
@@ -59,7 +76,20 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     from archaeology.mcp.server import mcp as mcp_server
 
-    mcp_http_app = mcp_server.streamable_http_app(streamable_http_path="/", stateless_http=True)
+    settings = mcp_transport_security()
+    mcp_http_app = mcp_server.streamable_http_app(
+        streamable_http_path="/",
+        stateless_http=True,
+        transport_security=settings,
+    )
+    # The SDK creates the session manager lazily on the first call; the
+    # transport middleware holds the same settings object, so mutate it in
+    # place to guarantee our configuration wins regardless of import order.
+    live = mcp_server.session_manager.security_settings
+    if live is not None:
+        live.enable_dns_rebinding_protection = settings.enable_dns_rebinding_protection
+        live.allowed_hosts = list(settings.allowed_hosts)
+        live.allowed_origins = list(settings.allowed_origins)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> Any:
@@ -83,7 +113,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "ok", "build": BUILD_MARKER}
 
     @app.get("/repos")
     def list_repos() -> list[dict[str, Any]]:

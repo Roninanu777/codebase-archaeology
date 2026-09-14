@@ -117,3 +117,38 @@ def test_github_available_reflects_token(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr("archaeology.ingest.github.resolve_github_token", lambda: "tok")
     assert runner.github_available() is True
+
+
+def test_mcp_transport_security_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from archaeology.api.main import mcp_transport_security
+
+    monkeypatch.setenv("ARCHAEOLOGY_MCP_ALLOWED_HOSTS", "example.modal.run,localhost")
+    settings = mcp_transport_security()
+    assert settings.enable_dns_rebinding_protection is True
+    assert "example.modal.run" in settings.allowed_hosts
+    assert "localhost" in settings.allowed_hosts
+
+
+def test_resolve_clone_path_falls_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from archaeology.routes import path_a
+
+    monkeypatch.setattr(path_a, "CLONES_DIR", tmp_path)
+    (tmp_path / "react").mkdir()
+    assert path_a.resolve_clone_path("facebook/react", "/nonexistent/mac/path") == str(
+        tmp_path / "react"
+    )
+    # recorded path wins when it exists
+    real = tmp_path / "other"
+    real.mkdir()
+    assert path_a.resolve_clone_path("facebook/react", str(real)) == str(real)
+    # nothing found -> returns the recorded value unchanged (abstain path)
+    assert path_a.resolve_clone_path("x/y", "/nonexistent") == "/nonexistent"
+
+
+def test_mcp_dns_rebinding_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    from archaeology.api.main import mcp_transport_security
+
+    monkeypatch.setenv("ARCHAEOLOGY_MCP_DNS_REBINDING", "0")
+    assert mcp_transport_security().enable_dns_rebinding_protection is False
+    monkeypatch.setenv("ARCHAEOLOGY_MCP_DNS_REBINDING", "1")
+    assert mcp_transport_security().enable_dns_rebinding_protection is True
