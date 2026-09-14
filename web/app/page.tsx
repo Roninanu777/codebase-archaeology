@@ -182,7 +182,14 @@ export default function Home() {
 
       {error && (
         <div className="mt-5">
-          <ErrorPanel message={error} />
+          <ErrorPanel
+            message={error}
+            hint={
+              error.includes("X-Archaeology-Token")
+                ? "Synthesis and indexing need the shared token: click “token” in the top-right, paste it, and save."
+                : undefined
+            }
+          />
         </div>
       )}
 

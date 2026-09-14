@@ -100,10 +100,11 @@ export function InfoPanel({
   );
 }
 
-export function ErrorPanel({ message }: { message: string }) {
+export function ErrorPanel({ message, hint }: { message: string; hint?: string }) {
   return (
     <div className="rounded-xl border border-red-500/25 bg-red-500/5 p-5">
       <p className="font-mono text-sm text-red-400">{message}</p>
+      {hint && <p className="mt-2 text-xs text-zinc-400">{hint}</p>}
     </div>
   );
 }

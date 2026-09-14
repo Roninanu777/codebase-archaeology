@@ -81,7 +81,7 @@ export function QueryBar({
         </button>
       </div>
 
-      <div className="mt-2 flex items-center gap-3">
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <div className="inline-flex shrink-0 rounded-lg border border-zinc-800 bg-zinc-900 p-0.5">
           {(
             [
@@ -104,20 +104,18 @@ export function QueryBar({
             </button>
           ))}
         </div>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
-          <span className="shrink-0 text-[11px] text-zinc-600">try</span>
-          {EXAMPLES.map((ex) => (
-            <button
-              key={ex}
-              onClick={() => onQueryChange(ex)}
-              className="shrink-0 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-0.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
-            >
-              {ex}
-            </button>
-          ))}
-        </div>
+        <span className="shrink-0 text-[11px] text-zinc-600">try</span>
+        {EXAMPLES.map((ex) => (
+          <button
+            key={ex}
+            onClick={() => onQueryChange(ex)}
+            className="shrink-0 rounded-full border border-zinc-800 bg-zinc-900 px-2.5 py-0.5 text-[11px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+          >
+            {ex}
+          </button>
+        ))}
         {current && (
-          <span className="hidden shrink-0 font-mono text-[10px] text-zinc-600 sm:inline">
+          <span className="ml-auto shrink-0 font-mono text-[10px] text-zinc-600">
             {current.commits?.toLocaleString()} commits · {current.chunks?.toLocaleString()} chunks ·{" "}
             <span className={current.complete_at_head ? "text-emerald-500/90" : "text-amber-500/90"}>
               {current.complete_at_head ? "at HEAD" : "partial"}
