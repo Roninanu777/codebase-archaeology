@@ -21,7 +21,7 @@ content, custom domains, paid hosting.
             └──────────────────────────────┬─────────────────────────────┘
                                            │ HTTPS + CORS
             ┌──────────────────────────────▼─────────────────────────────┐
-            │ Hugging Face Space (free, Docker, 2 vCPU / 16 GB)          │
+            │ Modal (free $30/mo compute, scale-to-zero, ASGI)            │
             │  uvicorn: FastAPI + MCP streamable-http at /mcp            │
             │  boot: alembic upgrade → background re-clone repos         │
             │  image: models baked in (bge-small + bge-reranker-base)    │
@@ -41,7 +41,7 @@ content, custom domains, paid hosting.
 
 | Component | Platform | Free limit we rely on |
 |---|---|---|
-| API + MCP | HF Space, Docker SDK, CPU basic | 2 vCPU / 16 GB RAM, ephemeral disk |
+| API + MCP | **Modal** (Dockerfile-based image, ASGI app) | $30/mo included compute, scale-to-zero, volumes |
 | Web | Cloudflare Pages (static export) | unlimited requests/bandwidth |
 | DB | Supabase free | 500 MB storage, 5 GB egress/mo |
 | LLM | OpenRouter (deepseek-v4-flash) | pay-per-token, ~$0.0002/answer |
@@ -265,3 +265,41 @@ after the model bake; the `tsv` column stays (ORM coupling).
 - **P1 — accounts + ship** (§10): run §9 runbook.
 - **P2 — verify + document**: run §11, add a hosting section to
   `WRITEUP.md` (the free-tier mechanics are writeup material).
+
+## 14. Deployment record — what actually shipped
+
+The spec above was written for a Hugging Face Space. That premise died during
+deployment: **HF now requires a PRO subscription for Docker Spaces** ("Static
+Spaces are free for everyone, but hosting Gradio and Docker Spaces on free
+cpu-basic requires a PRO subscription"). Static Spaces cannot run the Python
+API, so the API moved to **Modal** (Starter: $30/month included compute, no
+card required, scale-to-zero, volumes). The Dockerfile is reused verbatim as
+the image, so the runtime is identical to the locally smoke-tested container.
+
+| Piece | Where it lives now | Notes |
+|---|---|---|
+| API + MCP | Modal app `codebase-archaeology` → `Web.fastapi_app` | image from `Dockerfile`; clones in the `archaeology-data` volume (persist across cold starts — better than the HF ephemeral plan) |
+| DB | Supabase `us-east-2` pooler, 428 MB | `halfvec(384)`, HNSW + GIN; shipped via `db_ship.sh` |
+| Web | Cloudflare Pages | static export; API base baked at build |
+| Secrets | Modal secret `archaeology-secrets` | DB URI, OpenRouter key, `SYNTHESIS_TOKEN` (generate once; never store in the repo), CORS origins, `ARCHAEOLOGY_HALFVEC=1`, `ARCHAEOLOGY_MCP_DNS_REBINDING=0` |
+| Keepalive | GitHub Actions cron | pings `/healthz` + `/repos` (keeps Supabase past its 7-day idle pause; Modal cold-starts are ~15 s) |
+
+### Findings worth keeping
+
+1. **psycopg scheme matters**: SQLAlchemy defaults `postgresql://` to psycopg2;
+   the shipped URI must be `postgresql+psycopg://`. This never surfaced locally
+   because local dev always used the explicit scheme.
+2. **`repos.local_path` is environment-specific**: the shipped DB carries the
+   indexing machine's paths. `resolve_clone_path()` now falls back to
+   `CLONES_DIR/<repo>`, and the Modal warmup rewrites `local_path` per
+   environment.
+3. **MCP transport security is a trap on public hosts**: the SDK's
+   locally-created session manager wins over the `transport_security=`
+   argument (lazy singleton); the fix is to mutate its settings object in
+   place, driven by `ARCHAEOLOGY_MCP_DNS_REBINDING`.
+4. **Modal volumes refuse non-empty mount paths**: the Dockerfile must not
+   pre-create `/data`.
+5. **Container stdout is block-buffered**: print-based diagnostics appear late;
+   use an HTTP debug route for ground truth (removed after use).
+6. **Container smoke tests earned their keep again**: five of these six issues
+   were caught before any user saw the deployment.
